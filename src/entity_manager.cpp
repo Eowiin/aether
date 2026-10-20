@@ -20,7 +20,7 @@ entity_t EntityManager::createEntity() {
         this->alive[index] = true;
         return this->entities[index];
     } else {
-        if (this->entities.size() > std::numeric_limits<uint32_t>::max()) {
+        if (this->entities.size() >= UINT32_MAX) {
             throw std::overflow_error("No entity indices are available");
         }
 
@@ -36,13 +36,13 @@ entity_t EntityManager::createEntity() {
 void EntityManager::destroyEntity(entity_t entity) {
     if (this->isAlive(entity)) {
         this->alive[entity.index] = false;
-        if (this->entities[entity.index].generation < std::numeric_limits<uint32_t>::max()) {
+        if (this->entities[entity.index].generation <= UINT32_MAX) {
             this->free_list.push_back(entity.index);
         }
     }
 }
 
-bool EntityManager::isAlive(const entity_t &entity) const {
+bool EntityManager::isAlive(entity_t entity) const {
     return entity.index < this->entities.size()
     && this->alive.at(entity.index)
     && this->entities[entity.index].generation == entity.generation;

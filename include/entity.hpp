@@ -10,6 +10,8 @@ struct entity_t {
     uint64_t id() const {
         return (uint64_t(generation) << 32) | index;
     }
+
+    bool operator==(const entity_t&) const = default;
 };
 
 #endif

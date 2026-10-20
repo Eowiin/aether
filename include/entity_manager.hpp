@@ -3,7 +3,6 @@
 
 #include <vector>
 #include <deque>
-#include <limits>
 #include <stdexcept>
 #include "entity.hpp"
 
@@ -17,7 +16,7 @@ class EntityManager {
         ~EntityManager();
         entity_t createEntity();
         void destroyEntity(entity_t entity);
-        bool isAlive(const entity_t &entity) const;
+        bool isAlive(entity_t entity) const;
 };
 
 #endif
