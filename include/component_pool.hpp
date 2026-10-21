@@ -36,6 +36,7 @@ public:
     const Component* try_get(entity_t entity) const noexcept;
     std::size_t size() const noexcept override;
     bool erase(entity_t entity) noexcept override;
+    entity_t entity_at(std::size_t index) const override;
 };
 
 template<typename Component>
@@ -142,6 +143,12 @@ bool ComponentPool<Component>::erase(entity_t entity) noexcept {
     this->dense_components.pop_back();
     this->dense_entities.pop_back();
     return true;
+}
+
+template<typename Component>
+entity_t ComponentPool<Component>::entity_at(std::size_t index) const {
+    assert(index < this->dense_entities.size() && "Invalid index");
+    return this->dense_entities[index];
 }
 
 #endif

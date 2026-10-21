@@ -39,6 +39,8 @@ class Registry {
         const Component* try_get(entity_t entity) const noexcept;
         template<typename Component>
         bool has(entity_t entity) const noexcept;
+        template<typename... Components>
+        IComponentPool* view();
 };
 
 template<typename Component>
@@ -106,6 +108,27 @@ bool Registry::has(entity_t entity) const noexcept {
     const auto* pool = this->find_pool<Component>();
 
     return pool != nullptr && pool->contains(entity);
+}
+
+template<typename... Components>
+IComponentPool* Registry::view() {
+    static_assert(sizeof...(Components) > 0);
+
+    IComponentPool* smallest = nullptr;
+    bool missing = false;
+    IComponentPool* check = [&](IComponentPool* pool) {
+        if (pool == nullptr) {
+            missing = true;
+            return;
+        }
+
+        if (smallest == nullptr || pool->size() < smallest->size()) {
+            smallest = pool;
+        }
+    };
+    (check(this->find_pool<Components>()), ...);
+
+    return missing ? nullptr : smallest;
 }
 
 #endif

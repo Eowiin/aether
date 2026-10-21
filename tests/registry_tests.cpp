@@ -2,6 +2,8 @@
 #include <string>
 #include <type_traits>
 #include <stdexcept>
+#include <vector>
+#include <algorithm>
 #if !defined(NDEBUG) && (defined(__unix__) || defined(__APPLE__))
 #include <csignal>
 #include <sys/wait.h>
@@ -217,3 +219,115 @@ TEST_CASE("Registry get aborts when the entity lacks the component", "[registry]
     }));
 }
 #endif
+
+// Itère sur le pool le plus petit et garde les entités présentes dans l'autre
+static std::vector<entity_t> intersect(const IComponentPool& a, const IComponentPool& b) {
+    const IComponentPool& smaller = a.size() <= b.size() ? a : b;
+    const IComponentPool& other = a.size() <= b.size() ? b : a;
+    std::vector<entity_t> intersection;
+
+    for (std::size_t i = 0; i < smaller.size(); i++) {
+        entity_t entity = smaller.entity_at(i);
+        if (other.contains(entity)) {
+            intersection.push_back(entity);
+        }
+    }
+    return intersection;
+}
+
+static bool contains_entity(const std::vector<entity_t>& entities, entity_t entity) {
+    return std::find(entities.begin(), entities.end(), entity) != entities.end();
+}
+
+TEST_CASE("Intersection test for view", "[registry][view]") {
+    Registry registry;
+
+    entity_t e1 = registry.create();
+    entity_t e2 = registry.create();
+    entity_t e3 = registry.create();
+    entity_t e4 = registry.create();
+    entity_t e5 = registry.create();
+    entity_t e6 = registry.create();
+
+    ComponentPool<Position> positions;
+    ComponentPool<Velocity> velocities;
+
+    SECTION("pools of equal size") {
+        positions.emplace(e1, Position{1, 2});
+        positions.emplace(e2, Position{3, 4});
+        positions.emplace(e3, Position{5, 6});
+
+        velocities.emplace(e2, Velocity{1, 1});
+        velocities.emplace(e3, Velocity{2, 2});
+        velocities.emplace(e4, Velocity{3, 3});
+
+        std::vector<entity_t> intersection = intersect(positions, velocities);
+
+        REQUIRE(intersection.size() == 2);
+        REQUIRE(contains_entity(intersection, e2));
+        REQUIRE(contains_entity(intersection, e3));
+    }
+
+    SECTION("first pool larger than the second") {
+        positions.emplace(e1, Position{1, 2});
+        positions.emplace(e2, Position{3, 4});
+        positions.emplace(e3, Position{5, 6});
+        positions.emplace(e4, Position{7, 8});
+        positions.emplace(e5, Position{9, 10});
+
+        velocities.emplace(e4, Velocity{1, 1});
+        velocities.emplace(e6, Velocity{2, 2});
+
+        std::vector<entity_t> intersection = intersect(positions, velocities);
+
+        REQUIRE(intersection.size() == 1);
+        REQUIRE(contains_entity(intersection, e4));
+        REQUIRE(intersect(velocities, positions) == intersection);
+    }
+
+    SECTION("first pool smaller than the second") {
+        positions.emplace(e2, Position{1, 2});
+        positions.emplace(e5, Position{3, 4});
+
+        velocities.emplace(e1, Velocity{1, 1});
+        velocities.emplace(e2, Velocity{2, 2});
+        velocities.emplace(e3, Velocity{3, 3});
+        velocities.emplace(e4, Velocity{4, 4});
+        velocities.emplace(e5, Velocity{5, 5});
+        velocities.emplace(e6, Velocity{6, 6});
+
+        std::vector<entity_t> intersection = intersect(positions, velocities);
+
+        REQUIRE(intersection.size() == 2);
+        REQUIRE(contains_entity(intersection, e2));
+        REQUIRE(contains_entity(intersection, e5));
+        REQUIRE(intersect(velocities, positions) == intersection);
+    }
+
+    SECTION("one empty pool") {
+        positions.emplace(e1, Position{1, 2});
+        positions.emplace(e2, Position{3, 4});
+
+        REQUIRE(intersect(positions, velocities).empty());
+        REQUIRE(intersect(velocities, positions).empty());
+    }
+}
+
+TEST_CASE("Intersection distinguishes generations of a recycled index", "[registry][view]") {
+    EntityManager manager;
+    ComponentPool<Position> positions;
+    ComponentPool<Velocity> velocities;
+
+    entity_t e1 = manager.createEntity();
+    positions.emplace(e1, Position{1, 2});
+    manager.destroyEntity(e1);
+
+    entity_t e2 = manager.createEntity();
+    REQUIRE(e2.index == e1.index);
+    REQUIRE(e2.generation != e1.generation);
+
+    velocities.emplace(e2, Velocity{3, 4});
+
+    REQUIRE(intersect(positions, velocities).empty());
+    REQUIRE(intersect(velocities, positions).empty());
+}
