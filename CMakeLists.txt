@@ -39,6 +39,7 @@ endif()
 # Cœur de l'ECS, partagé entre l'exécutable et les tests
 add_library(aether_core STATIC
     src/entity_manager.cpp
+    src/registry.cpp
 )
 target_include_directories(aether_core PUBLIC
     "${CMAKE_CURRENT_SOURCE_DIR}/include"
@@ -66,6 +67,7 @@ if(AETHER_BUILD_TESTS)
     add_executable(ecs_tests
         tests/entity_manager_tests.cpp
         tests/component_pool_tests.cpp
+        tests/registry_tests.cpp
     )
     target_link_libraries(ecs_tests PRIVATE
         aether_core

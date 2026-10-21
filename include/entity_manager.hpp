@@ -4,6 +4,9 @@
 #include <vector>
 #include <deque>
 #include <stdexcept>
+#include <algorithm>
+#include <cstddef>
+#include <cstdint>
 #include "entity.hpp"
 
 class EntityManager {

@@ -24,11 +24,29 @@ entity_t EntityManager::createEntity() {
             throw std::overflow_error("No entity indices are available");
         }
 
+        const std::size_t needed = this->entities.size() + 1;
+
+        if (this->free_list.capacity() < needed) {
+            const std::size_t cap = this->free_list.capacity();
+            constexpr std::size_t limit = UINT32_MAX;
+
+            const std::size_t grown = cap > limit / 2
+                ? limit
+                : std::max<std::size_t>(1, cap * 2);
+
+            this->free_list.reserve(std::max(needed, grown));
+        }
+
         this->entities.push_back(entity_t{
-            (uint32_t) this->entities.size(),
+            static_cast<uint32_t>(this->entities.size()),
             0
         });
-        this->alive.push_back(true);
+        try {
+            this->alive.push_back(true);
+        } catch (...) {
+            this->entities.pop_back();
+            throw;
+        }
         return this->entities.back();
     }
 }

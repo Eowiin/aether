@@ -8,6 +8,7 @@
 #include <type_traits>
 #include <utility>
 #include <cassert>
+#include "icomponent_pool.hpp"
 #include "entity.hpp"
 
 // Exception-safety / type requirements:
@@ -18,7 +19,7 @@
 //    guarantee). Copyable types keep the strong guarantee via copy relocation.
 //    These constraints may be refined during the optimisation phase.
 template<typename Component>
-class ComponentPool
+class ComponentPool final : public IComponentPool
 {
 private:
     std::vector<uint32_t> sparse;
@@ -28,13 +29,13 @@ public:
     ComponentPool() = default;
     template<typename... Args>
     void emplace(entity_t entity, Args&&... args);
-    bool contains(entity_t entity) const noexcept;
+    bool contains(entity_t entity) const noexcept override;
     Component& get(entity_t entity) noexcept;
     const Component& get(entity_t entity) const noexcept;
     Component* try_get(entity_t entity) noexcept;
     const Component* try_get(entity_t entity) const noexcept;
-    std::size_t size() const noexcept;
-    bool erase(entity_t entity) noexcept;
+    std::size_t size() const noexcept override;
+    bool erase(entity_t entity) noexcept override;
 };
 
 template<typename Component>
@@ -86,13 +87,13 @@ bool ComponentPool<Component>::contains(entity_t entity) const noexcept {
 
 template<typename Component>
 Component& ComponentPool<Component>::get(entity_t entity) noexcept {
-    assert(contains(entity) && "Component does not exist");
+    assert(this->contains(entity) && "Component does not exist");
     return this->dense_components[this->sparse[entity.index]];
 }
 
 template<typename Component>
 const Component& ComponentPool<Component>::get(entity_t entity) const noexcept {
-    assert(contains(entity) && "Component does not exist");
+    assert(this->contains(entity) && "Component does not exist");
     return this->dense_components[this->sparse[entity.index]];
 }
 

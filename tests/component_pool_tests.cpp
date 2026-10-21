@@ -660,6 +660,9 @@ struct CountingComponent {
         other.value = -1;
         ++move_constructions;
     }
+
+    CountingComponent& operator=(const CountingComponent&) = default;
+    CountingComponent& operator=(CountingComponent&&) noexcept = default;
 };
 
 TEST_CASE("Inserting a temporary never copies the component") {
