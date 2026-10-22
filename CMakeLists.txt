@@ -68,6 +68,7 @@ if(AETHER_BUILD_TESTS)
         tests/entity_manager_tests.cpp
         tests/component_pool_tests.cpp
         tests/registry_tests.cpp
+        tests/view_tests.cpp
     )
     target_link_libraries(ecs_tests PRIVATE
         aether_core
