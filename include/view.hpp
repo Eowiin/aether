@@ -24,6 +24,17 @@ concept ViewComponents = sizeof...(Components) > 0
     && are_unique<Components...>::value;
 
 // IsConst : la View ne donne accès qu'en lecture aux composants (pools const)
+//
+// Contrat V1 (restriction volontaire, pas une limite des ECS en général) :
+//   Opération                                  | Pendant each() | Entre deux each()
+//   Lire un composant                          | autorisé       | autorisé
+//   Modifier la valeur d'un composant mutable  | autorisé       | autorisé
+//   Ajouter un composant                       | interdit       | autorisé
+//   Supprimer un composant                     | interdit       | autorisé
+//   Créer ou détruire une entité               | interdit       | autorisé
+//   Détruire le Registry                       | interdit       | invalide les Views associées
+// Les opérations interdites peuvent réorganiser les pools en cours de parcours :
+// comportement indéfini, non détecté.
 template<bool IsConst, typename... Components> requires ViewComponents<Components...>
 class View {
     private:

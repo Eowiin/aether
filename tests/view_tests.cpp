@@ -399,6 +399,49 @@ TEST_CASE("View - Reusable view reflects current pool state") {
     CHECK(std::count(visited.begin(), visited.end(), e2) == 1);
 }
 
+TEST_CASE("View - Reusable view no longer sees a removed component") {
+    Registry registry;
+
+    auto e1 = registry.create();
+    auto e2 = registry.create();
+    auto e3 = registry.create();
+
+    ComponentPool<Position> positions;
+    ComponentPool<Velocity> velocities;
+
+    positions.emplace(e1, Position{1, 2});
+    positions.emplace(e2, Position{3, 4});
+    positions.emplace(e3, Position{5, 6});
+
+    velocities.emplace(e1, Velocity{1, 1});
+    velocities.emplace(e2, Velocity{2, 2});
+    velocities.emplace(e3, Velocity{3, 3});
+
+    View<false, Position, Velocity> view(&positions, &velocities);
+
+    std::vector<entity_t> visited;
+    auto callback = [&](entity_t entity, Position& pos, Velocity& vel) {
+        visited.push_back(entity);
+        CHECK(&pos == positions.try_get(entity));
+        CHECK(&vel == velocities.try_get(entity));
+    };
+
+    view.each(callback);
+
+    REQUIRE(visited.size() == 3);
+
+    // e1 n'est pas le dernier : l'effacement déplace un autre élément dans le pool
+    REQUIRE(velocities.erase(e1));
+    visited.clear();
+
+    view.each(callback);
+
+    REQUIRE(visited.size() == 2);
+    CHECK(std::count(visited.begin(), visited.end(), e1) == 0);
+    CHECK(std::count(visited.begin(), visited.end(), e2) == 1);
+    CHECK(std::count(visited.begin(), visited.end(), e3) == 1);
+}
+
 TEST_CASE("View - Non-copyable component") {
     static_assert(!std::is_copy_constructible_v<Resource>);
 
