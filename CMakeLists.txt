@@ -81,4 +81,25 @@ if(AETHER_BUILD_TESTS)
     list(APPEND CMAKE_MODULE_PATH "${catch2_SOURCE_DIR}/extras")
     include(Catch)
     catch_discover_tests(ecs_tests)
+
+    # Tests négatifs de compilation : exclus du build normal, CTest lance la
+    # compilation et attend un échec. La variante de contrôle doit compiler.
+    function(aether_add_compile_fail_test name source)
+        add_library(${name}_ok OBJECT EXCLUDE_FROM_ALL ${source})
+        target_link_libraries(${name}_ok PRIVATE aether_core aether_warnings)
+
+        add_library(${name}_fail OBJECT EXCLUDE_FROM_ALL ${source})
+        target_link_libraries(${name}_fail PRIVATE aether_core aether_warnings)
+        target_compile_definitions(${name}_fail PRIVATE AETHER_EXPECT_COMPILE_ERROR)
+
+        foreach(variant ok fail)
+            add_test(NAME compile_fail.${name}.${variant}
+                COMMAND ${CMAKE_COMMAND} --build ${CMAKE_BINARY_DIR}
+                        --target ${name}_${variant} --config $<CONFIG>
+            )
+        endforeach()
+        set_tests_properties(compile_fail.${name}.fail PROPERTIES WILL_FAIL TRUE)
+    endfunction()
+
+    aether_add_compile_fail_test(const_view_mutation tests/compile_fail/const_view_mutation.cpp)
 endif()

@@ -675,3 +675,45 @@ TEST_CASE("Registry view - Constness of callback components follows the registry
         CHECK(calls == 1);
     }
 }
+
+TEST_CASE("Registry view - Mutable registry allows modifying components") {
+    Registry registry;
+
+    auto e1 = registry.create();
+
+    registry.emplace<Position>(e1, Position{1, 2});
+    registry.emplace<Velocity>(e1, Velocity{3, 4});
+
+    auto view = registry.view<Position, Velocity>();
+
+    view.each([](entity_t, Position& pos, Velocity& vel) {
+        pos.x += vel.dx;
+    });
+
+    // La modification porte sur le composant stocké, pas sur une copie
+    CHECK(registry.get<Position>(e1).x == 4);
+    CHECK(registry.get<Position>(e1).y == 2);
+}
+
+TEST_CASE("Registry view - Const registry allows reading components") {
+    Registry registry;
+
+    auto e1 = registry.create();
+
+    registry.emplace<Position>(e1, Position{1, 2});
+    registry.emplace<Velocity>(e1, Velocity{3, 4});
+
+    const Registry& readonly = registry;
+
+    auto view = readonly.view<Position, Velocity>();
+
+    STATIC_REQUIRE(std::is_same_v<decltype(view), View<true, Position, Velocity>>);
+
+    float sum = 0;
+
+    view.each([&](entity_t, const Position& pos, const Velocity& vel) {
+        sum += pos.x + vel.dx;
+    });
+
+    CHECK(sum == 4);
+}
