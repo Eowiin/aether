@@ -42,7 +42,10 @@ class Registry {
         bool has(entity_t entity) const noexcept;
         template<typename... Components>
             requires ViewComponents<Components...>
-        View<Components...> view();
+        View<false, Components...> view();
+        template<typename... Components>
+            requires ViewComponents<Components...>
+        View<true, Components...> view() const;
 };
 
 template<typename Component>
@@ -113,8 +116,13 @@ bool Registry::has(entity_t entity) const noexcept {
 }
 
 template<typename... Components> requires ViewComponents<Components...>
-View<Components...> Registry::view() {
-    return View(this->find_pool<Components>()...);
+View<false, Components...> Registry::view() {
+    return View<false, Components...>(this->find_pool<Components>()...);
+}
+
+template<typename... Components> requires ViewComponents<Components...>
+View<true, Components...> Registry::view() const {
+    return View<true, Components...>(this->find_pool<Components>()...);
 }
 
 #endif

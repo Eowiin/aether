@@ -35,7 +35,7 @@ TEST_CASE("View - Basic intersection") {
     velocities.emplace(e3, Velocity{2, 2});
     velocities.emplace(e4, Velocity{3, 3});
 
-    View<Position, Velocity> view(&positions, &velocities);
+    View<false, Position, Velocity> view(&positions, &velocities);
 
     std::vector<entity_t> visited;
 
@@ -70,7 +70,7 @@ TEST_CASE("View - Different pool sizes") {
         velocities.emplace(e3, Velocity{2, 2});
         velocities.emplace(e4, Velocity{3, 3});
 
-        View<Position, Velocity> view(&positions, &velocities);
+        View<false, Position, Velocity> view(&positions, &velocities);
 
         std::vector<entity_t> visited;
 
@@ -89,7 +89,7 @@ TEST_CASE("View - Different pool sizes") {
 
         velocities.emplace(e2, Velocity{1, 1});
 
-        View<Position, Velocity> view(&positions, &velocities);
+        View<false, Position, Velocity> view(&positions, &velocities);
 
         std::vector<entity_t> visited;
 
@@ -115,7 +115,7 @@ TEST_CASE("View - Empty intersection") {
         positions.emplace(e1, Position{1, 2});
         velocities.emplace(e2, Velocity{1, 1});
 
-        View<Position, Velocity> view(&positions, &velocities);
+        View<false, Position, Velocity> view(&positions, &velocities);
 
         int calls = 0;
 
@@ -129,7 +129,7 @@ TEST_CASE("View - Empty intersection") {
     SECTION("One pool empty") {
         positions.emplace(e1, Position{1, 2});
 
-        View<Position, Velocity> view(&positions, &velocities);
+        View<false, Position, Velocity> view(&positions, &velocities);
 
         int calls = 0;
 
@@ -141,7 +141,7 @@ TEST_CASE("View - Empty intersection") {
     }
 
     SECTION("Both pools empty") {
-        View<Position, Velocity> view(&positions, &velocities);
+        View<false, Position, Velocity> view(&positions, &velocities);
 
         int calls = 0;
 
@@ -163,7 +163,7 @@ TEST_CASE("View - Modify components through references") {
     positions.emplace(e1, Position{10, 20});
     velocities.emplace(e1, Velocity{3, 5});
 
-    View<Position, Velocity> view(&positions, &velocities);
+    View<false, Position, Velocity> view(&positions, &velocities);
 
     view.each([](entity_t, Position& pos, Velocity& vel) {
         pos.x += vel.dx;
@@ -193,7 +193,7 @@ TEST_CASE("View - Stale entity generations") {
 
     velocities.emplace(e2, Velocity{3, 4});
 
-    View<Position, Velocity> view(&positions, &velocities);
+    View<false, Position, Velocity> view(&positions, &velocities);
 
     int calls = 0;
 
@@ -214,7 +214,7 @@ TEST_CASE("View - Callback component order") {
     positions.emplace(e1, Position{10, 20});
     velocities.emplace(e1, Velocity{2, 3});
 
-    View<Velocity, Position> view(&velocities, &positions);
+    View<false, Velocity, Position> view(&velocities, &positions);
 
     int calls = 0;
 
@@ -269,7 +269,7 @@ TEST_CASE("View - Three components intersection") {
     healths.emplace(e5, Health{50});
     healths.emplace(e6, Health{60});
 
-    View<Position, Velocity, Health> view(&positions, &velocities, &healths);
+    View<false, Position, Velocity, Health> view(&positions, &velocities, &healths);
 
     std::vector<entity_t> visited;
 
@@ -348,7 +348,7 @@ TEST_CASE("View - Single component") {
     positions.emplace(e2, Position{3, 4});
     positions.emplace(e3, Position{5, 6});
 
-    View<Position> view(&positions);
+    View<false, Position> view(&positions);
 
     std::vector<entity_t> visited;
 
@@ -377,7 +377,7 @@ TEST_CASE("View - Reusable view reflects current pool state") {
 
     velocities.emplace(e1, Velocity{1, 1});
 
-    View<Position, Velocity> view(&positions, &velocities);
+    View<false, Position, Velocity> view(&positions, &velocities);
 
     std::vector<entity_t> visited;
     auto callback = [&](entity_t entity, Position&, Velocity&) {
@@ -411,7 +411,7 @@ TEST_CASE("View - Non-copyable component") {
 
     const int* original = resources.get(e1).value.get();
 
-    View<Resource> view(&resources);
+    View<false, Resource> view(&resources);
 
     int calls = 0;
 
@@ -610,7 +610,7 @@ TEST_CASE("Registry view - View built before the pool receives its first compone
 }
 
 template<typename... Components>
-concept CanMakeView = requires { typename View<Components...>; };
+concept CanMakeView = requires { typename View<false, Components...>; };
 
 template<typename... Components>
 concept CanMakeRegistryView = requires(Registry& registry) {
@@ -630,3 +630,48 @@ static_assert(CanMakeRegistryView<Position, Velocity>);
 static_assert(!CanMakeRegistryView<>);
 static_assert(!CanMakeRegistryView<Position, Position>);
 static_assert(!CanMakeRegistryView<Position, const Position>);
+
+TEST_CASE("Registry view - Constness of callback components follows the registry") {
+    Registry registry;
+
+    auto e1 = registry.create();
+
+    registry.emplace<Position>(e1, Position{1, 2});
+    registry.emplace<Velocity>(e1, Velocity{3, 4});
+
+    int calls = 0;
+
+    SECTION("Mutable registry gives mutable references") {
+        auto view = registry.view<Position, Velocity>();
+
+        view.each([&](entity_t entity, auto&& pos, auto&& vel) {
+            STATIC_REQUIRE(std::is_same_v<decltype(pos), Position&>);
+            STATIC_REQUIRE(std::is_same_v<decltype(vel), Velocity&>);
+
+            CHECK(entity == e1);
+            CHECK(&pos == registry.try_get<Position>(e1));
+            CHECK(&vel == registry.try_get<Velocity>(e1));
+            ++calls;
+        });
+
+        CHECK(calls == 1);
+    }
+
+    SECTION("Const registry gives const references") {
+        const Registry& readonly = registry;
+
+        auto view = readonly.view<Position, Velocity>();
+
+        view.each([&](entity_t entity, auto&& pos, auto&& vel) {
+            STATIC_REQUIRE(std::is_same_v<decltype(pos), const Position&>);
+            STATIC_REQUIRE(std::is_same_v<decltype(vel), const Velocity&>);
+
+            CHECK(entity == e1);
+            CHECK(&pos == readonly.try_get<Position>(e1));
+            CHECK(&vel == readonly.try_get<Velocity>(e1));
+            ++calls;
+        });
+
+        CHECK(calls == 1);
+    }
+}
