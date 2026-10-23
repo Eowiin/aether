@@ -11,6 +11,7 @@
 #include "icomponent_pool.hpp"
 #include "component_pool.hpp"
 #include "entity_manager.hpp"
+#include "view.hpp"
 
 class Registry {
     private:
@@ -39,8 +40,9 @@ class Registry {
         const Component* try_get(entity_t entity) const noexcept;
         template<typename Component>
         bool has(entity_t entity) const noexcept;
-        // template<typename... Components>
-        // IComponentPool* view();
+        template<typename... Components>
+            requires ViewComponents<Components...>
+        View<Components...> view();
 };
 
 template<typename Component>
@@ -110,25 +112,9 @@ bool Registry::has(entity_t entity) const noexcept {
     return pool != nullptr && pool->contains(entity);
 }
 
-// template<typename... Components>
-// IComponentPool* Registry::view() {
-//     static_assert(sizeof...(Components) > 0);
-
-//     IComponentPool* smallest = nullptr;
-//     bool missing = false;
-//     IComponentPool* check = [&](IComponentPool* pool) {
-//         if (pool == nullptr) {
-//             missing = true;
-//             return;
-//         }
-
-//         if (smallest == nullptr || pool->size() < smallest->size()) {
-//             smallest = pool;
-//         }
-//     };
-//     (check(this->find_pool<Components>()), ...);
-
-//     return missing ? nullptr : smallest;
-// }
+template<typename... Components> requires ViewComponents<Components...>
+View<Components...> Registry::view() {
+    return View(this->find_pool<Components>()...);
+}
 
 #endif

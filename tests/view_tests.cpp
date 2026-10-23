@@ -429,8 +429,193 @@ TEST_CASE("View - Non-copyable component") {
     CHECK(*resources.get(e1).value == 100);
 }
 
+TEST_CASE("Registry view - Two existing pools with intersection") {
+    Registry registry;
+
+    auto e1 = registry.create();
+    auto e2 = registry.create();
+    auto e3 = registry.create();
+
+    registry.emplace<Position>(e1, Position{1, 2});
+    registry.emplace<Position>(e2, Position{3, 4});
+    registry.emplace<Velocity>(e2, Velocity{1, 1});
+    registry.emplace<Velocity>(e3, Velocity{2, 2});
+
+    std::vector<entity_t> visited;
+
+    registry.view<Position, Velocity>().each([&](entity_t entity, Position& pos, Velocity& vel) {
+        visited.push_back(entity);
+        CHECK(&pos == registry.try_get<Position>(entity));
+        CHECK(&vel == registry.try_get<Velocity>(entity));
+    });
+
+    REQUIRE(visited.size() == 1);
+    CHECK(visited[0] == e2);
+}
+
+TEST_CASE("Registry view - Three existing pools") {
+    Registry registry;
+
+    auto e1 = registry.create();
+    auto e2 = registry.create();
+    auto e3 = registry.create();
+    auto e4 = registry.create();
+
+    registry.emplace<Position>(e1, Position{1, 2});
+    registry.emplace<Position>(e2, Position{3, 4});
+    registry.emplace<Position>(e3, Position{5, 6});
+
+    registry.emplace<Velocity>(e2, Velocity{1, 1});
+    registry.emplace<Velocity>(e3, Velocity{2, 2});
+    registry.emplace<Velocity>(e4, Velocity{3, 3});
+
+    registry.emplace<Health>(e1, Health{10});
+    registry.emplace<Health>(e3, Health{30});
+    registry.emplace<Health>(e4, Health{40});
+
+    std::vector<entity_t> visited;
+
+    registry.view<Position, Velocity, Health>().each([&](entity_t entity, Position&, Velocity&, Health&) {
+        visited.push_back(entity);
+    });
+
+    REQUIRE(visited.size() == 1);
+    CHECK(visited[0] == e3);
+}
+
+TEST_CASE("Registry view - Missing pools") {
+    Registry registry;
+
+    auto e1 = registry.create();
+
+    int calls = 0;
+    auto callback = [&](entity_t, Position&, Velocity&) {
+        ++calls;
+    };
+
+    SECTION("One pool missing") {
+        registry.emplace<Position>(e1, Position{1, 2});
+
+        registry.view<Position, Velocity>().each(callback);
+
+        CHECK(calls == 0);
+    }
+
+    SECTION("All pools missing") {
+        registry.view<Position, Velocity>().each(callback);
+
+        CHECK(calls == 0);
+    }
+}
+
+TEST_CASE("Registry view - Existing but empty pool") {
+    Registry registry;
+
+    auto e1 = registry.create();
+    auto e2 = registry.create();
+
+    registry.emplace<Position>(e1, Position{1, 2});
+    registry.emplace<Velocity>(e2, Velocity{1, 1});
+
+    // Détruire e2 vide le pool Velocity sans le supprimer du Registry
+    registry.destroy(e2);
+    REQUIRE_FALSE(registry.has<Velocity>(e2));
+
+    int calls = 0;
+
+    registry.view<Position, Velocity>().each([&](entity_t, Position&, Velocity&) {
+        ++calls;
+    });
+
+    CHECK(calls == 0);
+}
+
+TEST_CASE("Registry view - Modify components in callback") {
+    Registry registry;
+
+    auto e1 = registry.create();
+
+    registry.emplace<Position>(e1, Position{10, 20});
+    registry.emplace<Velocity>(e1, Velocity{3, 5});
+
+    registry.view<Position, Velocity>().each([](entity_t, Position& pos, Velocity& vel) {
+        pos.x += vel.dx;
+        pos.y += vel.dy;
+    });
+
+    CHECK(registry.get<Position>(e1).x == 13);
+    CHECK(registry.get<Position>(e1).y == 25);
+}
+
+TEST_CASE("Registry view - Reused view sees components added to existing pools") {
+    Registry registry;
+
+    auto e1 = registry.create();
+    auto e2 = registry.create();
+
+    registry.emplace<Position>(e1, Position{1, 2});
+    registry.emplace<Position>(e2, Position{3, 4});
+    registry.emplace<Velocity>(e1, Velocity{1, 1});
+
+    auto view = registry.view<Position, Velocity>();
+
+    std::vector<entity_t> visited;
+    auto callback = [&](entity_t entity, Position&, Velocity&) {
+        visited.push_back(entity);
+    };
+
+    view.each(callback);
+
+    REQUIRE(visited.size() == 1);
+    CHECK(visited[0] == e1);
+
+    registry.emplace<Velocity>(e2, Velocity{2, 2});
+    visited.clear();
+
+    view.each(callback);
+
+    REQUIRE(visited.size() == 2);
+    CHECK(std::count(visited.begin(), visited.end(), e1) == 1);
+    CHECK(std::count(visited.begin(), visited.end(), e2) == 1);
+}
+
+TEST_CASE("Registry view - View built before the pool receives its first component") {
+    Registry registry;
+
+    auto e1 = registry.create();
+
+    registry.emplace<Position>(e1, Position{1, 2});
+
+    // Velocity n'a encore jamais été ajouté : view() ne crée aucun pool, la
+    // View garde donc un pointeur nul et reste vide même après l'ajout
+    auto view = registry.view<Position, Velocity>();
+
+    int calls = 0;
+    auto callback = [&](entity_t entity, Position&, Velocity&) {
+        CHECK(entity == e1);
+        ++calls;
+    };
+
+    view.each(callback);
+    REQUIRE(calls == 0);
+
+    registry.emplace<Velocity>(e1, Velocity{1, 1});
+
+    view.each(callback);
+    CHECK(calls == 0);
+
+    // Une nouvelle View récupère le pool désormais existant
+    registry.view<Position, Velocity>().each(callback);
+    CHECK(calls == 1);
+}
+
 template<typename... Components>
 concept CanMakeView = requires { typename View<Components...>; };
+
+template<typename... Components>
+concept CanMakeRegistryView = requires(Registry& registry) {
+    registry.template view<Components...>();
+};
 
 static_assert(CanMakeView<Position>);
 static_assert(CanMakeView<Position, Velocity>);
@@ -440,3 +625,8 @@ static_assert(!CanMakeView<Position, Velocity, Position>);
 static_assert(!CanMakeView<Position, const Position>);
 static_assert(!CanMakeView<const Position>);
 static_assert(!CanMakeView<Position&>);
+
+static_assert(CanMakeRegistryView<Position, Velocity>);
+static_assert(!CanMakeRegistryView<>);
+static_assert(!CanMakeRegistryView<Position, Position>);
+static_assert(!CanMakeRegistryView<Position, const Position>);
