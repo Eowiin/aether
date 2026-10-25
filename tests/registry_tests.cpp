@@ -221,14 +221,16 @@ TEST_CASE("Registry get aborts when the entity lacks the component", "[registry]
 #endif
 
 // Itère sur le pool le plus petit et garde les entités présentes dans l'autre
-static std::vector<entity_t> intersect(const IComponentPool& a, const IComponentPool& b) {
-    const IComponentPool& smaller = a.size() <= b.size() ? a : b;
-    const IComponentPool& other = a.size() <= b.size() ? b : a;
+template<typename A, typename B>
+static std::vector<entity_t> intersect(const ComponentPool<A>& a, const ComponentPool<B>& b) {
+    if (b.size() < a.size()) {
+        return intersect(b, a);
+    }
     std::vector<entity_t> intersection;
 
-    for (std::size_t i = 0; i < smaller.size(); i++) {
-        entity_t entity = smaller.entity_at(i);
-        if (other.contains(entity)) {
+    for (std::size_t i = 0; i < a.size(); i++) {
+        entity_t entity = a.entity_at(i);
+        if (b.contains(entity)) {
             intersection.push_back(entity);
         }
     }

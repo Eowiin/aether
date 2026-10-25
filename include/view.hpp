@@ -43,7 +43,11 @@ class View {
         std::tuple<PoolPtr<Components>...> pools;
 
         const IComponentPool* get_smallest() const;
-        bool has(const entity_t &entity) const;
+        // Précondition : entity provient du stockage dense de candidates
+        // (candidates->entity_at(i)). Sa présence dans ce pool n'est pas
+        // revérifiée : appeler has() avec une autre entité peut renvoyer true
+        // pour un composant absent, et get() serait alors indéfini.
+        bool has(const entity_t &entity, const IComponentPool* candidates) const;
 
     public:
         View(PoolPtr<Components>... pools);
@@ -69,9 +73,10 @@ const IComponentPool* View<IsConst, Components...>::get_smallest() const {
 }
 
 template<bool IsConst, typename... Components> requires ViewComponents<Components...>
-bool View<IsConst, Components...>::has(const entity_t &entity) const {
+bool View<IsConst, Components...>::has(const entity_t &entity, const IComponentPool* candidates) const {
     return std::apply([&](auto*... pool) {
-        return ((pool && pool->contains(entity)) && ...);
+        // L'entité vient du pool candidat : inutile d'y vérifier sa présence
+        return ((pool && (pool == candidates || pool->contains(entity))) && ...);
     }, this->pools);
 }
 
@@ -81,12 +86,24 @@ void View<IsConst, Components...>::each(Callback&& callback) const {
     const auto* smallest = this->get_smallest();
 
     if (smallest) {
-        for (std::size_t i = 0; i < smallest->size(); i++) {
-            const entity_t entity = smallest->entity_at(i);
-            if (this->has(entity)) {
-                std::invoke(callback, entity, std::get<PoolPtr<Components>>(this->pools)->get(entity)...);
+        // Parcours instancié pour chaque type de pool : candidates est un
+        // ComponentPool<T>* concret (final), donc size() et entity_at() sont
+        // appelés sans passer par la vtable
+        auto iterate = [&](auto* candidates) {
+            const std::size_t size = candidates->size();
+
+            for (std::size_t i = 0; i < size; i++) {
+                const entity_t entity = candidates->entity_at(i);
+                if (this->has(entity, candidates)) {
+                    std::invoke(callback, entity, std::get<PoolPtr<Components>>(this->pools)->get(entity)...);
+                }
             }
-        }
+        };
+
+        // Retrouve à l'exécution le pool typé qui correspond à smallest
+        std::apply([&](auto*... pool) {
+            ((pool == smallest ? (iterate(pool), true) : false) || ...);
+        }, this->pools);
     }
 }
 

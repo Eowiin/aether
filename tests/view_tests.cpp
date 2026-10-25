@@ -335,6 +335,83 @@ TEST_CASE("View - Three components intersection") {
     }
 }
 
+TEST_CASE("View - Any of three pools can drive the iteration") {
+    Registry registry;
+
+    std::vector<entity_t> entities;
+    for (int i = 0; i < 110; ++i) {
+        entities.push_back(registry.create());
+    }
+
+    // Chaque situation répartit les trois mêmes jeux d'indices entre les pools :
+    //  - large  : 100 entités, [10, 110)
+    //  - medium : 50 entités, [0, 50)
+    //  - small  : 10 entités ; 7-9 n'ont pas le grand composant, 50-52 pas le
+    //    moyen, seules 10-13 ont les trois. Le petit pool est rempli en ordre
+    //    décroissant : l'ordre de visite prouve qu'il sert de base au parcours
+    std::vector<uint32_t> large;
+    for (uint32_t i = 10; i < 110; ++i) {
+        large.push_back(i);
+    }
+    std::vector<uint32_t> medium;
+    for (uint32_t i = 0; i < 50; ++i) {
+        medium.push_back(i);
+    }
+    const std::vector<uint32_t> small{52, 51, 50, 13, 12, 11, 10, 9, 8, 7};
+    const std::vector<entity_t> expected{entities[13], entities[12], entities[11], entities[10]};
+
+    ComponentPool<Position> positions;
+    ComponentPool<Velocity> velocities;
+    ComponentPool<Health> healths;
+
+    auto fill = [&](auto& pool, const std::vector<uint32_t>& indices, auto make) {
+        for (uint32_t i : indices) {
+            pool.emplace(entities[i], make(i));
+        }
+    };
+    auto position = [](uint32_t i) { return Position{float(i), 0}; };
+    auto velocity = [](uint32_t i) { return Velocity{float(i), 0}; };
+    auto health = [](uint32_t i) { return Health{int(i)}; };
+
+    SECTION("100 Position, 50 Velocity, 10 Health: Health drives") {
+        fill(positions, large, position);
+        fill(velocities, medium, velocity);
+        fill(healths, small, health);
+    }
+
+    SECTION("10 Position, 100 Velocity, 50 Health: Position drives") {
+        fill(positions, small, position);
+        fill(velocities, large, velocity);
+        fill(healths, medium, health);
+    }
+
+    SECTION("50 Position, 10 Velocity, 100 Health: Velocity drives") {
+        fill(positions, medium, position);
+        fill(velocities, small, velocity);
+        fill(healths, large, health);
+    }
+
+    View<false, Position, Velocity, Health> view(&positions, &velocities, &healths);
+
+    std::vector<entity_t> visited;
+
+    view.each([&](entity_t entity, Position& pos, Velocity& vel, Health& hp) {
+        visited.push_back(entity);
+
+        CHECK(&pos == positions.try_get(entity));
+        CHECK(&vel == velocities.try_get(entity));
+        CHECK(&hp == healths.try_get(entity));
+        CHECK(vel.dx == pos.x);
+        CHECK(hp.hp == int(pos.x));
+    });
+
+    REQUIRE(visited.size() == expected.size());
+    for (const entity_t& entity : expected) {
+        CHECK(std::count(visited.begin(), visited.end(), entity) == 1);
+    }
+    CHECK(visited == expected);
+}
+
 TEST_CASE("View - Single component") {
     Registry registry;
 

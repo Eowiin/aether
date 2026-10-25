@@ -36,7 +36,7 @@ public:
     const Component* try_get(entity_t entity) const noexcept;
     std::size_t size() const noexcept override;
     bool erase(entity_t entity) noexcept override;
-    entity_t entity_at(std::size_t index) const override;
+    entity_t entity_at(std::size_t index) const;
 };
 
 template<typename Component>
