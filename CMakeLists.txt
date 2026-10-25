@@ -20,6 +20,7 @@ if(NOT CMAKE_BUILD_TYPE AND NOT CMAKE_CONFIGURATION_TYPES)
 endif()
 
 option(AETHER_BUILD_TESTS "Compiler les tests" ON)
+option(AETHER_BUILD_BENCHMARKS "Compiler les benchmarks" ON)
 option(AETHER_WARNINGS_AS_ERRORS "Traiter les avertissements comme des erreurs" ON)
 
 # Avertissements partagés par toutes les cibles du projet
@@ -52,6 +53,13 @@ add_executable(${PROJECT_NAME}
     src/main.cpp
 )
 target_link_libraries(${PROJECT_NAME} PRIVATE aether_core aether_warnings)
+
+# Benchmarks : compilés dans tous les modes, mais seules les mesures en
+# Release (-O3 -DNDEBUG) sont représentatives
+if(AETHER_BUILD_BENCHMARKS)
+    add_executable(view_bench bench/view_bench.cpp)
+    target_link_libraries(view_bench PRIVATE aether_core aether_warnings)
+endif()
 
 if(AETHER_BUILD_TESTS)
     include(FetchContent)
