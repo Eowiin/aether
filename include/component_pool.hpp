@@ -3,6 +3,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <span>
 #include <vector>
 #include <stdexcept>
 #include <type_traits>
@@ -37,6 +38,10 @@ public:
     std::size_t size() const noexcept override;
     bool erase(entity_t entity) noexcept override;
     entity_t entity_at(std::size_t index) const;
+    // Stockage dense : components()[i] appartient à entity_at(i).
+    // Invalidé par toute modification structurelle (emplace, erase).
+    std::span<Component> components() noexcept;
+    std::span<const Component> components() const noexcept;
 };
 
 template<typename Component>
@@ -149,6 +154,16 @@ template<typename Component>
 entity_t ComponentPool<Component>::entity_at(std::size_t index) const {
     assert(index < this->dense_entities.size() && "Invalid index");
     return this->dense_entities[index];
+}
+
+template<typename Component>
+std::span<Component> ComponentPool<Component>::components() noexcept {
+    return this->dense_components;
+}
+
+template<typename Component>
+std::span<const Component> ComponentPool<Component>::components() const noexcept {
+    return this->dense_components;
 }
 
 #endif

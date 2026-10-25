@@ -1,5 +1,6 @@
 #include <catch2/catch_test_macros.hpp>
 #include <memory>
+#include <span>
 #include <stdexcept>
 #include <type_traits>
 #include <vector>
@@ -890,5 +891,37 @@ TEST_CASE("Emplace constructs a move-only component in place") {
         REQUIRE(pool.contains(b));
         CHECK(*pool.get(b).ptr == 2);
         CHECK(*pool.get(entity_t{99, 0}).ptr == 99);
+    }
+}
+
+TEST_CASE("components exposes the dense storage in entity_at order") {
+    ComponentPool<Position> pool;
+
+    entity_t a{0, 0};
+    entity_t b{1, 0};
+    entity_t c{2, 0};
+    pool.emplace(a, Position{1.0f, 1.0f});
+    pool.emplace(b, Position{2.0f, 2.0f});
+    pool.emplace(c, Position{3.0f, 3.0f});
+    REQUIRE(pool.erase(a));
+
+    std::span<Position> components = pool.components();
+
+    REQUIRE(components.size() == pool.size());
+    for (std::size_t i = 0; i < components.size(); ++i) {
+        CHECK(&components[i] == &pool.get(pool.entity_at(i)));
+    }
+
+    SECTION("writes through the span are visible through get") {
+        components[0].x = 42.0f;
+
+        CHECK(pool.get(pool.entity_at(0)).x == 42.0f);
+    }
+
+    SECTION("const pool only gives read-only access") {
+        const ComponentPool<Position>& const_pool = pool;
+
+        STATIC_REQUIRE(std::is_same_v<decltype(const_pool.components()), std::span<const Position>>);
+        CHECK(const_pool.components().data() == components.data());
     }
 }
