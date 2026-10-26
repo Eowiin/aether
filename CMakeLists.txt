@@ -56,14 +56,38 @@ target_link_libraries(${PROJECT_NAME} PRIVATE aether_core aether_warnings)
 
 # Benchmarks : compilés dans tous les modes, mais seules les mesures en
 # Release (-O3 -DNDEBUG) sont représentatives
+if(AETHER_BUILD_BENCHMARKS OR AETHER_BUILD_TESTS)
+    include(FetchContent)
+endif()
+
 if(AETHER_BUILD_BENCHMARKS)
     add_executable(view_bench bench/view_bench.cpp)
     target_link_libraries(view_bench PRIVATE aether_core aether_warnings)
+
+    # EnTT ne sert que de point de comparaison : ses en-têtes sont inclus en
+    # SYSTEM pour que nos avertissements (-Werror) ne s'appliquent pas à eux
+    FetchContent_Declare(
+        EnTT
+        GIT_REPOSITORY https://github.com/skypjack/entt.git
+        GIT_TAG v4.0.0
+        GIT_SHALLOW TRUE
+        SYSTEM
+    )
+    FetchContent_MakeAvailable(EnTT)
+
+    # Même cible, donc même compilateur et mêmes options pour les deux ECS
+    # Chaque ECS a sa propre unité de compilation (donc sa propre boucle chaude)
+    # et EnTT n'est visible que de benchmarks/entt_bench.cpp
+    add_executable(entt_bench
+        benchmarks/benchmark_main.cpp
+        benchmarks/aether_bench.cpp
+        benchmarks/entt_bench.cpp
+    )
+    target_include_directories(entt_bench PRIVATE benchmarks)
+    target_link_libraries(entt_bench PRIVATE aether_core aether_warnings EnTT::EnTT)
 endif()
 
 if(AETHER_BUILD_TESTS)
-    include(FetchContent)
-
     FetchContent_Declare(
         Catch2
         GIT_REPOSITORY https://github.com/catchorg/Catch2.git
