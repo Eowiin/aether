@@ -837,3 +837,52 @@ TEST_CASE("Registry view - Const registry allows reading components") {
 
     CHECK(sum == 4);
 }
+
+TEST_CASE("View - References stay correct after swap-and-pop in the candidate pool") {
+    Registry registry;
+
+    std::vector<entity_t> entities;
+    for (int i = 0; i < 6; i++) {
+        entities.push_back(registry.create());
+    }
+
+    ComponentPool<Position> positions;
+    ComponentPool<Velocity> velocities;
+
+    // Velocity est le plus petit pool : il est le candidat
+    for (int i = 0; i < 6; i++) {
+        positions.emplace(entities[i], Position{float(i), float(i)});
+    }
+    for (int i = 1; i < 5; i++) {
+        velocities.emplace(entities[i], Velocity{float(i), float(-i)});
+    }
+
+    // Chaque erase() hors fin de pool déplace le dernier élément dans le trou
+    velocities.erase(entities[1]);
+    positions.erase(entities[2]);
+
+    View<false, Position, Velocity> view(&positions, &velocities);
+    std::vector<entity_t> visited;
+    view.each([&](entity_t entity, Position& pos, Velocity& vel) {
+        visited.push_back(entity);
+        CHECK(&pos == positions.try_get(entity));
+        CHECK(&vel == velocities.try_get(entity));
+        CHECK(pos.x == float(entity.index));
+        CHECK(vel.dx == float(entity.index));
+    });
+
+    std::sort(visited.begin(), visited.end(), [](entity_t a, entity_t b) { return a.index < b.index; });
+    REQUIRE(visited.size() == 2);
+    CHECK(visited[0] == entities[3]);
+    CHECK(visited[1] == entities[4]);
+
+    // Même vérification en lecture seule, l'ordre des composants inversé
+    View<true, Velocity, Position> const_view(&velocities, &positions);
+    std::size_t count = 0;
+    const_view.each([&](entity_t entity, const Velocity& vel, const Position& pos) {
+        count++;
+        CHECK(&vel == velocities.try_get(entity));
+        CHECK(&pos == positions.try_get(entity));
+    });
+    CHECK(count == 2);
+}

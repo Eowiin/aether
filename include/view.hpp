@@ -48,6 +48,11 @@ class View {
         // revérifiée : appeler has() avec une autre entité peut renvoyer true
         // pour un composant absent, et get() serait alors indéfini.
         bool has(const entity_t &entity, const IComponentPool* candidates) const;
+        // Composant de type Component pour entity, qui se trouve à l'indice dense i
+        // de candidates. Si candidates est le pool de Component, on lit directement
+        // components()[i] ; sinon on passe par get(entity)
+        template<typename Component, typename CandidatePool>
+        auto& component_of(CandidatePool* candidates, std::size_t i, const entity_t &entity) const;
 
     public:
         View(PoolPtr<Components>... pools);
@@ -81,6 +86,17 @@ bool View<IsConst, Components...>::has(const entity_t &entity, const IComponentP
 }
 
 template<bool IsConst, typename... Components> requires ViewComponents<Components...>
+template<typename Component, typename CandidatePool>
+auto& View<IsConst, Components...>::component_of(CandidatePool* candidates, std::size_t i, const entity_t &entity) const {
+    // Décidé à la compilation : une seule des deux branches existe dans chaque instance
+    if constexpr (std::is_same_v<ComponentPool<Component>, std::remove_const_t<CandidatePool>>) {
+        return candidates->components()[i];
+    } else {
+        return std::get<PoolPtr<Component>>(this->pools)->get(entity);
+    }
+}
+
+template<bool IsConst, typename... Components> requires ViewComponents<Components...>
 template<typename Callback>
 void View<IsConst, Components...>::each(Callback&& callback) const {
     const auto* smallest = this->get_smallest();
@@ -88,14 +104,17 @@ void View<IsConst, Components...>::each(Callback&& callback) const {
     if (smallest) {
         // Parcours instancié pour chaque type de pool : candidates est un
         // ComponentPool<T>* concret (final), donc size() et entity_at() sont
-        // appelés sans passer par la vtable
+        // appelés sans passer par la vtable. Le type du candidat est connu à
+        // la compilation dans cette lambda générique ; le pool effectivement
+        // choisi (smallest) ne l'est qu'à l'exécution
         auto iterate = [&](auto* candidates) {
             const std::size_t size = candidates->size();
 
             for (std::size_t i = 0; i < size; i++) {
                 const entity_t entity = candidates->entity_at(i);
                 if (this->has(entity, candidates)) {
-                    std::invoke(callback, entity, std::get<PoolPtr<Components>>(this->pools)->get(entity)...);
+                    // Références transmises dans l'ordre de Components...
+                    std::invoke(callback, entity, this->template component_of<Components>(candidates, i, entity)...);
                 }
             }
         };
