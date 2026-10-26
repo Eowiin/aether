@@ -19,9 +19,12 @@
 #include <cstdint>
 #include <cstdio>
 #include <cstdlib>
+#include <functional>
 #include <memory>
 #include <numeric>
 #include <random>
+#include <tuple>
+#include <type_traits>
 #include <vector>
 #include "component_pool.hpp"
 #include "icomponent_pool.hpp"
@@ -255,6 +258,76 @@ std::size_t view_each(Pools& pools) {
     return processed;
 }
 
+// Variante expérimentale de View<false, ...>::each(), hors production : le
+// composant du pool candidat est lu à l'indice dense i (components()[i]
+// appartient à entity_at(i)) au lieu de passer par get(entity). Choix du
+// candidat, test de présence, sens de parcours et accès aux autres pools sont
+// recopiés à l'identique de view.hpp.
+template<typename... Components>
+class DenseCandidateView {
+    private:
+        std::tuple<ComponentPool<Components>*...> pools;
+
+    public:
+        explicit DenseCandidateView(ComponentPool<Components>*... pools) : pools(pools...) {}
+
+        template<typename Callback>
+        void each(Callback&& callback) const {
+            const IComponentPool* smallest = std::apply([](auto*... pool) -> const IComponentPool* {
+                if ((!pool || ...)) {
+                    return nullptr;
+                }
+
+                const IComponentPool* smallest = nullptr;
+                ((smallest == nullptr || pool->size() < smallest->size() ? smallest = pool : smallest), ...);
+                return smallest;
+            }, this->pools);
+
+            if (smallest) {
+                auto iterate = [&](auto* candidates) {
+                    using CandidatePool = std::remove_pointer_t<decltype(candidates)>;
+                    const IComponentPool* candidate_pool = candidates;
+
+                    // Seul le composant du pool candidat change de chemin d'accès
+                    auto component = [&]<typename Component>(std::size_t i, entity_t entity) -> Component& {
+                        if constexpr (std::is_same_v<ComponentPool<Component>, CandidatePool>) {
+                            return candidates->components()[i];
+                        } else {
+                            return std::get<ComponentPool<Component>*>(this->pools)->get(entity);
+                        }
+                    };
+
+                    const std::size_t size = candidates->size();
+
+                    for (std::size_t i = 0; i < size; i++) {
+                        const entity_t entity = candidates->entity_at(i);
+                        const bool has = std::apply([&](auto*... pool) {
+                            return ((pool && (pool == candidate_pool || pool->contains(entity))) && ...);
+                        }, this->pools);
+                        if (has) {
+                            std::invoke(callback, entity, component.template operator()<Components>(i, entity)...);
+                        }
+                    }
+                };
+
+                std::apply([&](auto*... pool) {
+                    ((pool == smallest ? (iterate(pool), true) : false) || ...);
+                }, this->pools);
+            }
+        }
+};
+
+std::size_t view_each_dense(Pools& pools) {
+    std::size_t processed = 0;
+    DenseCandidateView<Position, Velocity> view(&pools.positions, &pools.velocities);
+    view.each([&](entity_t, Position& p, const Velocity& v) {
+        p.x += v.x * dt;
+        p.y += v.y * dt;
+        ++processed;
+    });
+    return processed;
+}
+
 using Pass = std::size_t (*)(Pools&);
 
 struct Benchmark {
@@ -302,6 +375,60 @@ void verify(const Benchmark& benchmark) {
     if (!same_positions(tested->positions, expected->positions)) {
         std::fprintf(stderr, "%s : ", benchmark.name);
         fail("positions différentes de la méthode de référence");
+    }
+}
+
+// Supprime une entité sur position_step dans Position et une sur
+// velocity_step dans Velocity : chaque erase() hors fin de pool déplace le
+// dernier élément dans le trou (swap-and-pop) et réordonne le stockage dense
+void erase_some(Pools& pools, const Scenario& scenario, uint32_t position_step, uint32_t velocity_step) {
+    const uint32_t entity_count = scenario.position_count + scenario.velocity_count - scenario.intersection_count;
+    for (uint32_t i = 0; i < entity_count; ++i) {
+        if (i % position_step == 0) {
+            pools.positions.erase(entity_t{i, 0});
+        }
+        if (i % velocity_step == 1) {
+            pools.velocities.erase(entity_t{i, 0});
+        }
+    }
+}
+
+template<typename Component>
+void check_dense_indices(ComponentPool<Component>& pool) {
+    for (std::size_t i = 0; i < pool.size(); ++i) {
+        if (&pool.components()[i] != &pool.get(pool.entity_at(i))) {
+            fail("components()[i] n'est pas le composant de entity_at(i) après swap-and-pop");
+        }
+    }
+}
+
+// Après suppressions, la variante dense doit traiter les mêmes entités et
+// produire les mêmes positions que la View de production et que la boucle
+// manuelle. Les deux motifs couvrent un pool candidat Velocity et, pour les
+// pools équilibrés, un pool candidat Position.
+void verify_after_erasures() {
+    struct Pattern { uint32_t position_step, velocity_step; };
+    for (const Scenario& scenario : comparison_scenarios) {
+        for (const Pattern pattern : {Pattern{5, 3}, Pattern{3, 5}}) {
+            auto dense = make_pools(scenario);
+            auto view = make_pools(scenario);
+            auto manual = make_pools(scenario);
+            for (Pools* pools : {dense.get(), view.get(), manual.get()}) {
+                erase_some(*pools, scenario, pattern.position_step, pattern.velocity_step);
+            }
+            check_dense_indices(dense->positions);
+            check_dense_indices(dense->velocities);
+
+            const std::size_t expected = manual_intersection(*manual);
+            if (view_each_dense(*dense) != expected || view_each(*view) != expected) {
+                std::fprintf(stderr, "%s : ", scenario.name);
+                fail("nombre d'entités traitées inattendu après suppressions");
+            }
+            if (!same_positions(dense->positions, view->positions) || !same_positions(dense->positions, manual->positions)) {
+                std::fprintf(stderr, "%s : ", scenario.name);
+                fail("positions différentes après suppressions");
+            }
+        }
     }
 }
 
@@ -396,7 +523,9 @@ int main() {
     benchmarks.push_back({"Manuelle + vérif. redondante", &ref, manual_redundant, ref.velocity_count, ref.intersection_count, manual_intersection, {}, {}});
     benchmarks.push_back({"Manuelle comme View", &ref, manual_like_view, ref.velocity_count, ref.intersection_count, manual_intersection, {}, {}});
     benchmarks.push_back({"View each()", &ref, view_each, ref.velocity_count, ref.intersection_count, manual_intersection, {}, {}});
+    benchmarks.push_back({"View each() accès dense", &ref, view_each_dense, ref.velocity_count, ref.intersection_count, manual_intersection, {}, {}});
 
+    verify_after_erasures();
     measure_all(benchmarks);
 
     std::printf("%d tours × %d échantillons de %d passes, %d passes de chauffe par tour\n\n",
@@ -423,34 +552,36 @@ int main() {
         total += checksum(b.pools->positions);
     }
 
-    // Intersection manuelle contre View, mesurées ensemble scénario par scénario.
-    // Velocity n'est jamais plus grand que Position : les deux méthodes
-    // examinent min(P, V) candidats (à égalité, View parcourt Position et
-    // l'intersection manuelle Velocity)
-    std::printf("\nIntersection manuelle contre View (médianes)\n\n");
+    // Intersection manuelle, View et variante dense, mesurées ensemble scénario
+    // par scénario. Velocity n'est jamais plus grand que Position : les trois
+    // méthodes examinent min(P, V) candidats (à égalité, les View parcourent
+    // Position et l'intersection manuelle Velocity)
+    std::printf("\nIntersection manuelle, View et View accès dense (médianes)\n\n");
     const char* comparison_headers[] = {"disposition", "Position", "Velocity", "communes",
-                                        "manuelle µs", "View µs", "View/man.",
-                                        "ns/cand man", "ns/cand View", "ns/trt man", "ns/trt View"};
+                                        "manuelle µs", "View µs", "dense µs", "View/man.", "dense/View",
+                                        "ns/cand View", "ns/cand dns", "ns/trt View", "ns/trt dns"};
     print_headers("Scénario", 30, comparison_headers, std::size(comparison_headers));
 
     for (const Scenario& scenario : comparison_scenarios) {
         const std::size_t candidates = std::min(scenario.position_count, scenario.velocity_count);
-        std::vector<Benchmark> pair;
-        pair.push_back({"Intersection manuelle", &scenario, manual_intersection, candidates, scenario.intersection_count, manual_intersection, {}, {}});
-        pair.push_back({"View each()", &scenario, view_each, candidates, scenario.intersection_count, manual_intersection, {}, {}});
-        measure_all(pair);
+        std::vector<Benchmark> trio;
+        trio.push_back({"Intersection manuelle", &scenario, manual_intersection, candidates, scenario.intersection_count, manual_intersection, {}, {}});
+        trio.push_back({"View each()", &scenario, view_each, candidates, scenario.intersection_count, manual_intersection, {}, {}});
+        trio.push_back({"View each() accès dense", &scenario, view_each_dense, candidates, scenario.intersection_count, manual_intersection, {}, {}});
+        measure_all(trio);
 
-        const double manual = median(pair[0].samples);
-        const double view = median(pair[1].samples);
+        const double manual = median(trio[0].samples);
+        const double view = median(trio[1].samples);
+        const double dense = median(trio[2].samples);
         // « regroupée » et « dispersée » ont un é sur deux octets : 13 octets = 12 caractères
         print_padded(scenario.name, 30);
-        std::printf(" %13s %12u %12u %12u %12.2f %12.2f %12.2f %12.3f %12.3f %12.3f %12.3f\n",
+        std::printf(" %13s %12u %12u %12u %12.2f %12.2f %12.2f %12.2f %12.2f %12.3f %12.3f %12.3f %12.3f\n",
                     scenario.scattered ? "dispersée" : "regroupée",
                     scenario.position_count, scenario.velocity_count, scenario.intersection_count,
-                    manual / 1000.0, view / 1000.0, view / manual,
-                    manual / double(candidates), view / double(candidates),
-                    manual / double(scenario.intersection_count), view / double(scenario.intersection_count));
-        for (const Benchmark& b : pair) {
+                    manual / 1000.0, view / 1000.0, dense / 1000.0, view / manual, dense / view,
+                    view / double(candidates), dense / double(candidates),
+                    view / double(scenario.intersection_count), dense / double(scenario.intersection_count));
+        for (const Benchmark& b : trio) {
             total += checksum(b.pools->positions);
         }
     }
