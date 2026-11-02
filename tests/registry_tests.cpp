@@ -333,3 +333,150 @@ TEST_CASE("Intersection distinguishes generations of a recycled index", "[regist
     REQUIRE(intersect(positions, velocities).empty());
     REQUIRE(intersect(velocities, positions).empty());
 }
+
+// Composant dont le constructeur lève quand throw_on_construct est activé.
+// Copie et déplacement implicites (noexcept) : il respecte les contraintes de
+// type de ComponentPool, seul son constructeur d'origine peut échouer.
+struct FragileComponent {
+    int value;
+
+    static inline bool throw_on_construct = false;
+
+    explicit FragileComponent(int v) : value(v) {
+        if (throw_on_construct) {
+            throw std::runtime_error("Construction failed");
+        }
+    }
+};
+
+TEST_CASE("Registry stays usable after a failed first insertion in a new pool", "[registry]") {
+    struct ThrowOnConstructGuard {
+        ThrowOnConstructGuard() { FragileComponent::throw_on_construct = true; }
+        ~ThrowOnConstructGuard() { FragileComponent::throw_on_construct = false; }
+    };
+
+    STATIC_REQUIRE(std::is_nothrow_move_constructible_v<FragileComponent>);
+
+    Registry reg;
+    entity_t first = reg.create();
+    entity_t second = reg.create();
+
+    reg.emplace<Position>(first, 1.0f, 2.0f);
+
+    {
+        ThrowOnConstructGuard guard;
+        CHECK_THROWS_AS(reg.emplace<FragileComponent>(second, 7), std::runtime_error);
+    }
+
+    // Le pool de FragileComponent a été créé puis est resté vide
+    CHECK_FALSE(reg.has<FragileComponent>(second));
+    CHECK(reg.try_get<FragileComponent>(second) == nullptr);
+    CHECK_FALSE(reg.has<FragileComponent>(first));
+    CHECK_FALSE(reg.has<Position>(second));
+
+    REQUIRE(reg.has<Position>(first));
+    CHECK(reg.get<Position>(first).x == 1.0f);
+    CHECK(reg.get<Position>(first).y == 2.0f);
+
+    // Exception désactivée : la même insertion réussit
+    REQUIRE_NOTHROW(reg.emplace<FragileComponent>(second, 7));
+
+    REQUIRE(reg.has<FragileComponent>(second));
+    CHECK(reg.get<FragileComponent>(second).value == 7);
+    CHECK_FALSE(reg.has<FragileComponent>(first));
+    REQUIRE(reg.has<Position>(first));
+    CHECK(reg.get<Position>(first).x == 1.0f);
+    CHECK_FALSE(reg.has<Position>(second));
+
+    // Aucune entité perdue : elles sont toujours vivantes et détruites proprement
+    reg.destroy(second);
+    CHECK_FALSE(reg.has<FragileComponent>(second));
+    CHECK(reg.has<Position>(first));
+
+    // Le Registry reste utilisable : une nouvelle entité reçoit ses composants
+    entity_t third = reg.create();
+    REQUIRE_NOTHROW(reg.emplace<FragileComponent>(third, 9));
+    CHECK(reg.get<FragileComponent>(third).value == 9);
+}
+
+TEST_CASE("Registry destroys an entity completely and recycles its index cleanly", "[registry]") {
+    Registry reg;
+    entity_t a = reg.create();
+    entity_t b = reg.create();
+    entity_t c = reg.create();
+
+    reg.emplace<Position>(a, 1.0f, 1.0f);
+    reg.emplace<Velocity>(a, 2.0f, 2.0f);
+    reg.emplace<Position>(b, 3.0f, 3.0f);
+    reg.emplace<Velocity>(c, 4.0f, 4.0f);
+
+    auto check_b_and_c_intact = [&]() {
+        REQUIRE(reg.has<Position>(b));
+        CHECK(reg.get<Position>(b).x == 3.0f);
+        CHECK_FALSE(reg.has<Velocity>(b));
+
+        REQUIRE(reg.has<Velocity>(c));
+        CHECK(reg.get<Velocity>(c).dx == 4.0f);
+        CHECK_FALSE(reg.has<Position>(c));
+    };
+
+    SECTION("destroying removes every component and leaves other entities intact") {
+        reg.destroy(a);
+
+        CHECK_FALSE(reg.has<Position>(a));
+        CHECK_FALSE(reg.has<Velocity>(a));
+        CHECK(reg.try_get<Position>(a) == nullptr);
+        CHECK(reg.try_get<Velocity>(a) == nullptr);
+        check_b_and_c_intact();
+    }
+
+    SECTION("destroying twice has no effect") {
+        reg.destroy(a);
+        CHECK_NOTHROW(reg.destroy(a));
+
+        CHECK_FALSE(reg.has<Position>(a));
+        CHECK_FALSE(reg.has<Velocity>(a));
+        check_b_and_c_intact();
+
+        // Le recyclage n'a pas été perturbé par la double destruction :
+        // un seul index est libre, il est rendu une seule fois
+        entity_t d = reg.create();
+        entity_t e = reg.create();
+        CHECK(d.index == a.index);
+        CHECK(e.index != a.index);
+        CHECK(e.index != b.index);
+        CHECK(e.index != c.index);
+    }
+
+    SECTION("a recycled index gets a new generation and no old component") {
+        reg.destroy(a);
+        entity_t d = reg.create();
+
+        CHECK(d.index == a.index);
+        CHECK(d.generation != a.generation);
+        CHECK(d != a);
+
+        CHECK_FALSE(reg.has<Position>(d));
+        CHECK_FALSE(reg.has<Velocity>(d));
+        CHECK(reg.try_get<Position>(d) == nullptr);
+        CHECK(reg.try_get<Velocity>(d) == nullptr);
+
+        reg.emplace<Position>(d, 9.0f, 9.0f);
+        reg.emplace<Velocity>(d, 8.0f, 8.0f);
+
+        REQUIRE(reg.has<Position>(d));
+        REQUIRE(reg.has<Velocity>(d));
+        CHECK(reg.get<Position>(d).x == 9.0f);
+        CHECK(reg.get<Velocity>(d).dx == 8.0f);
+
+        // L'ancienne entité reste invalide malgré l'index partagé
+        CHECK_FALSE(reg.has<Position>(a));
+        CHECK_FALSE(reg.has<Velocity>(a));
+        CHECK(reg.try_get<Position>(a) == nullptr);
+        CHECK(reg.try_get<Velocity>(a) == nullptr);
+        CHECK_THROWS_AS(reg.emplace<Position>(a, 0.0f, 0.0f), std::invalid_argument);
+        CHECK(reg.get<Position>(d).x == 9.0f);
+
+        check_b_and_c_intact();
+    }
+}
