@@ -53,6 +53,7 @@ endif()
 add_library(aether_core STATIC
     src/entity_manager.cpp
     src/registry.cpp
+    src/movement_system.cpp
 )
 target_include_directories(aether_core PUBLIC
     "${CMAKE_CURRENT_SOURCE_DIR}/include"
