@@ -1,12 +1,5 @@
+#include <cassert>
 #include "entity_manager.hpp"
-
-EntityManager::EntityManager(/* args */)
-{
-}
-
-EntityManager::~EntityManager()
-{
-}
 
 entity_t EntityManager::createEntity() {
     if (!this->free_list.empty()) {
@@ -51,17 +44,18 @@ entity_t EntityManager::createEntity() {
     }
 }
 
-void EntityManager::destroyEntity(entity_t entity) {
+void EntityManager::destroyEntity(entity_t entity) noexcept {
     if (this->isAlive(entity)) {
-        this->alive[entity.index] = false;
-        if (this->entities[entity.index].generation <= UINT32_MAX) {
+        if (this->entities[entity.index].generation < UINT32_MAX) {
+            assert(this->free_list.size() < this->free_list.capacity());
             this->free_list.push_back(entity.index);
         }
+        this->alive[entity.index] = false;
     }
 }
 
-bool EntityManager::isAlive(entity_t entity) const {
+bool EntityManager::isAlive(entity_t entity) const noexcept {
     return entity.index < this->entities.size()
-    && this->alive.at(entity.index)
+    && this->alive[entity.index]
     && this->entities[entity.index].generation == entity.generation;
 }
