@@ -309,6 +309,70 @@ TEST_CASE("Failed insertion leaves the pool unchanged") {
     CHECK(pool.get(first).value == 1);
 }
 
+TEST_CASE("Failed reallocation leaves existing components intact") {
+    // ThrowingComponent n'a pas de constructeur par déplacement : quand le
+    // vector grandit, il recopie les composants déjà présents. emplace(e, int)
+    // construit le nouveau composant en place, sans copie : toute exception
+    // levée ici vient donc forcément de la relocation des anciens composants.
+    struct ThrowOnCopyGuard {
+        ThrowOnCopyGuard() { ThrowingComponent::throw_on_copy = true; }
+        ~ThrowOnCopyGuard() { ThrowingComponent::throw_on_copy = false; }
+    };
+
+    ComponentPool<ThrowingComponent> pool;
+    std::vector<entity_t> entities;
+
+    auto check_unchanged = [&]() {
+        REQUIRE(pool.size() == entities.size());
+        for (std::size_t i = 0; i < entities.size(); ++i) {
+            REQUIRE(pool.contains(entities[i]));
+            CHECK(pool.get(entities[i]).value == int(entities[i].index) * 10);
+            CHECK(pool.entity_at(i) == entities[i]);
+        }
+    };
+
+    // La capacité n'est pas observable : on insère jusqu'à ce qu'une insertion
+    // doive réallouer. Les insertions sans réallocation ne copient rien et
+    // réussissent même avec throw_on_copy activé ; la première qui lève est
+    // celle qui réalloue.
+    constexpr uint32_t max_insertions = 10'000;
+    entity_t failed{0, 0};
+    bool threw = false;
+
+    {
+        ThrowOnCopyGuard guard;
+
+        for (uint32_t i = 0; i < max_insertions && !threw; ++i) {
+            entity_t e{i, 0};
+
+            try {
+                pool.emplace(e, int(i) * 10);
+                entities.push_back(e);
+            } catch (const std::runtime_error&) {
+                threw = true;
+                failed = e;
+            }
+        }
+    }
+
+    // Au moins une réallocation avec des composants à recopier (pool non vide)
+    REQUIRE(threw);
+    REQUIRE(failed.index > 0);
+
+    // Rien n'a été perdu : mêmes entités, mêmes valeurs
+    check_unchanged();
+    CHECK_FALSE(pool.contains(failed));
+    CHECK(pool.try_get(failed) == nullptr);
+    CHECK_FALSE(pool.erase(failed));
+
+    // Exception désactivée : la même insertion réussit et tout reste cohérent
+    REQUIRE_NOTHROW(pool.emplace(failed, int(failed.index) * 10));
+    entities.push_back(failed);
+
+    check_unchanged();
+    CHECK(pool.contains(failed));
+}
+
 TEST_CASE("get and try_get refer to the same component") {
     ComponentPool<Position> pool;
 

@@ -19,6 +19,17 @@
 //    non-copyable type would leave the pool unable to roll back (no strong
 //    guarantee). Copyable types keep the strong guarantee via copy relocation.
 //    These constraints may be refined during the optimisation phase.
+//
+// Invalidation contract:
+//  - Any structural modification (emplace, erase, and assignment to or from
+//    the pool) invalidates every reference, pointer and span previously
+//    obtained from get(), try_get() and components(), for all entities, not
+//    only the one being modified: emplace may reallocate the dense storage and
+//    erase moves the last component into the freed slot.
+//  - This holds even when the operation throws: emplace may have reallocated
+//    before failing, so only the pool's observable state (size, contents) is
+//    guaranteed to be rolled back, not the addresses of its components.
+//  - Dense indices given to entity_at() and components() are invalidated too.
 template<typename Component>
 class ComponentPool final : public IComponentPool
 {
@@ -39,7 +50,7 @@ public:
     bool erase(entity_t entity) noexcept override;
     entity_t entity_at(std::size_t index) const;
     // Stockage dense : components()[i] appartient à entity_at(i).
-    // Invalidé par toute modification structurelle (emplace, erase).
+    // Invalidé par toute modification structurelle (voir le contrat ci-dessus).
     std::span<Component> components() noexcept;
     std::span<const Component> components() const noexcept;
 };
