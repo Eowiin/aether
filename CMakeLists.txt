@@ -114,6 +114,7 @@ if(AETHER_BUILD_TESTS)
         tests/component_pool_tests.cpp
         tests/registry_tests.cpp
         tests/view_tests.cpp
+        tests/movement_system_tests.cpp
     )
     target_link_libraries(ecs_tests PRIVATE
         aether_core
