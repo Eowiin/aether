@@ -23,6 +23,18 @@ option(AETHER_BUILD_TESTS "Compiler les tests" ON)
 option(AETHER_BUILD_BENCHMARKS "Compiler les benchmarks" ON)
 option(AETHER_WARNINGS_AS_ERRORS "Traiter les avertissements comme des erreurs" ON)
 
+option(AETHER_SANITIZE "Activer AddressSanitizer et UBSan (GCC/Clang)" OFF)
+
+# Les sanitizers s'appliquent à tout le build (Catch2 compris) pour éviter de
+# mélanger du code instrumenté et non instrumenté
+if(AETHER_SANITIZE)
+    if(MSVC)
+        message(FATAL_ERROR "AETHER_SANITIZE n'est pas pris en charge avec MSVC")
+    endif()
+    add_compile_options(-fsanitize=address,undefined -fno-sanitize-recover=all -fno-omit-frame-pointer)
+    add_link_options(-fsanitize=address,undefined)
+endif()
+
 # Avertissements partagés par toutes les cibles du projet
 add_library(aether_warnings INTERFACE)
 if(MSVC)
