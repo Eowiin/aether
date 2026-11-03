@@ -1,5 +1,6 @@
 #include "raylib.h"
 #include <algorithm>
+#include <cmath>
 #include "game/movement_system.hpp"
 #include "game/position_snapshot_system.hpp"
 #include "game/render_system.hpp"
@@ -28,11 +29,16 @@ int main() {
         input.vertical = (IsKeyDown(KEY_S) ? 1.0f : 0.0f) - (IsKeyDown(KEY_Z) ? 1.0f : 0.0f);
         input.horizontal = (IsKeyDown(KEY_D) ? 1.0f : 0.0f) - (IsKeyDown(KEY_Q) ? 1.0f : 0.0f);
         accumulator += std::min(GetFrameTime(), 0.25f);  // cap anti « spirale de la mort »
-        while (accumulator >= FIXED_DT) {
+        int ticks = 0;
+        while (accumulator >= FIXED_DT && ticks < MAX_TICKS_PER_FRAME) {
             position_snapshot_system(registry);
             player_control_system(registry);
             movement_system(registry, FIXED_DT);
             accumulator -= FIXED_DT;
+            ++ticks;
+        }
+        if (accumulator >= FIXED_DT) {
+            accumulator = std::fmod(accumulator, FIXED_DT);
         }
         BeginDrawing();
         ClearBackground(RAYWHITE);
