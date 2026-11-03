@@ -30,6 +30,39 @@ TEST_CASE("PlayerControlSystem - seule l'entité avec PlayerInput est pilotée")
     CHECK(registry.get<Velocity>(b).value.y == -4.0f);
 }
 
+TEST_CASE("PlayerControlSystem - chaque entité suit sa propre commande") {
+    Registry registry;
+
+    // A va vers la droite, B vers le haut (y décroît vers le haut de l'écran)
+    auto a = registry.create();
+    registry.emplace<Velocity>(a, Vec2{0.0f, 0.0f});
+    registry.emplace<PlayerInput>(a, PlayerInput{1.0f, 0.0f});
+
+    auto b = registry.create();
+    registry.emplace<Velocity>(b, Vec2{0.0f, 0.0f});
+    registry.emplace<PlayerInput>(b, PlayerInput{0.0f, -1.0f});
+
+    auto c = registry.create();
+    registry.emplace<Velocity>(c, Vec2{5.0f, 2.0f});
+
+    player_control_system(registry);
+
+    const Vec2 va = registry.get<Velocity>(a).value;
+    const Vec2 vb = registry.get<Velocity>(b).value;
+    const Vec2 vc = registry.get<Velocity>(c).value;
+
+    CHECK(va.x == PLAYER_SPEED);
+    CHECK(va.y == 0.0f);
+
+    CHECK(vb.x == 0.0f);
+    CHECK(vb.y == -PLAYER_SPEED);
+
+    CHECK((va.x != vb.x || va.y != vb.y));
+
+    CHECK(vc.x == 5.0f);
+    CHECK(vc.y == 2.0f);
+}
+
 TEST_CASE("PlayerControlSystem - la diagonale est normalisée") {
     Registry registry;
 
