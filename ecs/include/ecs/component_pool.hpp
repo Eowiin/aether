@@ -9,8 +9,8 @@
 #include <type_traits>
 #include <utility>
 #include <cassert>
-#include "icomponent_pool.hpp"
-#include "entity.hpp"
+#include "ecs/icomponent_pool.hpp"
+#include "ecs/entity.hpp"
 
 // Exception-safety / type requirements:
 //  - erase() requires a noexcept move assignment and destructor.

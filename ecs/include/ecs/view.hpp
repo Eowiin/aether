@@ -6,9 +6,9 @@
 #include <vector>
 #include <tuple>
 #include <type_traits>
-#include "icomponent_pool.hpp"
-#include "component_pool.hpp"
-#include "entity.hpp"
+#include "ecs/icomponent_pool.hpp"
+#include "ecs/component_pool.hpp"
+#include "ecs/entity.hpp"
 
 template<typename... Ts>
 struct are_unique : std::true_type {};

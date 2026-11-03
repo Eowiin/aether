@@ -1,5 +1,5 @@
 #include <cassert>
-#include "entity_manager.hpp"
+#include "ecs/entity_manager.hpp"
 
 entity_t EntityManager::createEntity() {
     if (!this->free_list.empty()) {

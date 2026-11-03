@@ -3,8 +3,8 @@
 #include <memory>
 #include <type_traits>
 #include <vector>
-#include "registry.hpp"
-#include "view.hpp"
+#include "ecs/registry.hpp"
+#include "ecs/view.hpp"
 
 struct Position {
     float x;

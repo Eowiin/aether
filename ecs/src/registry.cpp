@@ -1,4 +1,4 @@
-#include "registry.hpp"
+#include "ecs/registry.hpp"
 
 void Registry::destroy(entity_t entity) {
     if (this->e_manager.isAlive(entity)) {

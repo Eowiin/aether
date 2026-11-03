@@ -26,9 +26,9 @@
 #include <tuple>
 #include <type_traits>
 #include <vector>
-#include "component_pool.hpp"
-#include "icomponent_pool.hpp"
-#include "view.hpp"
+#include "ecs/component_pool.hpp"
+#include "ecs/icomponent_pool.hpp"
+#include "ecs/view.hpp"
 
 #if defined(_MSC_VER)
 #include <intrin.h>

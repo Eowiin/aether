@@ -2,7 +2,7 @@
 // Sans AETHER_EXPECT_COMPILE_ERROR, ce fichier doit compiler (contrôle) ; avec,
 // il doit échouer. Le contrôle garantit que l'échec vient bien de la mutation
 // et non d'une erreur sans rapport (include manquant, faute de frappe...).
-#include "registry.hpp"
+#include "ecs/registry.hpp"
 
 struct Position {
     float x;

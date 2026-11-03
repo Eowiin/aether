@@ -1,7 +1,7 @@
 #include <catch2/catch_test_macros.hpp>
 #include <type_traits>
 #include <vector>
-#include "entity_manager.hpp"
+#include "ecs/entity_manager.hpp"
 
 // Accès aux détails internes que les tests ne peuvent pas atteindre autrement
 struct EntityManagerTestAccess {

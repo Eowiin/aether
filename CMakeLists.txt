@@ -51,21 +51,33 @@ endif()
 
 # Cœur de l'ECS, partagé entre l'exécutable et les tests
 add_library(aether_core STATIC
-    src/entity_manager.cpp
-    src/registry.cpp
-    src/movement_system.cpp
+    ecs/src/entity_manager.cpp
+    ecs/src/registry.cpp
 )
 target_include_directories(aether_core PUBLIC
-    "${CMAKE_CURRENT_SOURCE_DIR}/include"
+    "${CMAKE_CURRENT_SOURCE_DIR}/ecs/include"
 )
 target_compile_features(aether_core PUBLIC cxx_std_20)
 target_link_libraries(aether_core PRIVATE aether_warnings)
 
+# Code propre au jeu (systèmes, composants) : dépend du cœur de l'ECS mais
+# pas l'inverse, donc aether_core reste réutilisable dans un autre projet
+add_library(aether_game STATIC
+    game/src/movement_system.cpp
+)
+target_include_directories(aether_game PUBLIC
+    "${CMAKE_CURRENT_SOURCE_DIR}/game/include"
+)
+target_link_libraries(aether_game
+    PUBLIC aether_core
+    PRIVATE aether_warnings
+)
+
 # Executable principal
 add_executable(${PROJECT_NAME}
-    src/main.cpp
+    game/src/main.cpp
 )
-target_link_libraries(${PROJECT_NAME} PRIVATE aether_core aether_warnings)
+target_link_libraries(${PROJECT_NAME} PRIVATE aether_game aether_warnings)
 
 # Benchmarks : compilés dans tous les modes, mais seules les mesures en
 # Release (-O3 -DNDEBUG) sont représentatives
@@ -110,14 +122,22 @@ if(AETHER_BUILD_TESTS)
     FetchContent_MakeAvailable(Catch2)
 
     add_executable(ecs_tests
-        tests/entity_manager_tests.cpp
-        tests/component_pool_tests.cpp
-        tests/registry_tests.cpp
-        tests/view_tests.cpp
-        tests/movement_system_tests.cpp
+        ecs/tests/entity_manager_tests.cpp
+        ecs/tests/component_pool_tests.cpp
+        ecs/tests/registry_tests.cpp
+        ecs/tests/view_tests.cpp
     )
     target_link_libraries(ecs_tests PRIVATE
         aether_core
+        aether_warnings
+        Catch2::Catch2WithMain
+    )
+
+    add_executable(game_tests
+        game/tests/movement_system_tests.cpp
+    )
+    target_link_libraries(game_tests PRIVATE
+        aether_game
         aether_warnings
         Catch2::Catch2WithMain
     )
@@ -127,6 +147,7 @@ if(AETHER_BUILD_TESTS)
     list(APPEND CMAKE_MODULE_PATH "${catch2_SOURCE_DIR}/extras")
     include(Catch)
     catch_discover_tests(ecs_tests)
+    catch_discover_tests(game_tests)
 
     # Tests négatifs de compilation : exclus du build normal, CTest lance la
     # compilation et attend un échec. La variante de contrôle doit compiler.
@@ -147,5 +168,5 @@ if(AETHER_BUILD_TESTS)
         set_tests_properties(compile_fail.${name}.fail PROPERTIES WILL_FAIL TRUE)
     endfunction()
 
-    aether_add_compile_fail_test(const_view_mutation tests/compile_fail/const_view_mutation.cpp)
+    aether_add_compile_fail_test(const_view_mutation ecs/tests/compile_fail/const_view_mutation.cpp)
 endif()

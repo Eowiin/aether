@@ -1,7 +1,7 @@
 #ifndef ICOMPONENT_POOL_HPP
 #define ICOMPONENT_POOL_HPP
 
-#include "entity.hpp"
+#include "ecs/entity.hpp"
 
 class IComponentPool {
     public:

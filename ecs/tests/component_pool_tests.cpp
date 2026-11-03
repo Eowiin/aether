@@ -4,7 +4,7 @@
 #include <stdexcept>
 #include <type_traits>
 #include <vector>
-#include "component_pool.hpp"
+#include "ecs/component_pool.hpp"
 
 struct Position {
     float x;

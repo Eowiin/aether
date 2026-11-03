@@ -8,10 +8,10 @@
 #include <stdexcept>
 #include <utility>
 #include <stdexcept>
-#include "icomponent_pool.hpp"
-#include "component_pool.hpp"
-#include "entity_manager.hpp"
-#include "view.hpp"
+#include "ecs/icomponent_pool.hpp"
+#include "ecs/component_pool.hpp"
+#include "ecs/entity_manager.hpp"
+#include "ecs/view.hpp"
 
 class Registry {
     private:

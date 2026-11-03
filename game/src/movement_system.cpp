@@ -1,6 +1,6 @@
-#include "movement_system.hpp"
-#include "components/position.hpp"
-#include "components/velocity.hpp"
+#include "game/movement_system.hpp"
+#include "game/components/position.hpp"
+#include "game/components/velocity.hpp"
 
 void movement_system(Registry& registry, float dt) {
     registry.view<Position, Velocity>().each(

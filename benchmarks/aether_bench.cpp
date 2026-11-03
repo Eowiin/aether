@@ -1,7 +1,7 @@
 #include <utility>
 #include <vector>
-#include "registry.hpp"
-#include "view.hpp"
+#include "ecs/registry.hpp"
+#include "ecs/view.hpp"
 #include "benchmark_common.hpp"
 
 namespace bench {

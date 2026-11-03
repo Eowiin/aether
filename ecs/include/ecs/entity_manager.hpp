@@ -7,7 +7,7 @@
 #include <algorithm>
 #include <cstddef>
 #include <cstdint>
-#include "entity.hpp"
+#include "ecs/entity.hpp"
 
 // Capacity invariant: free_list.capacity() >= entities.size() after every
 // createEntity(), and entities.size() == alive.size() at all times. Every

@@ -10,7 +10,7 @@
 #include <unistd.h>
 #define AETHER_DEATH_TESTS 1
 #endif
-#include "registry.hpp"
+#include "ecs/registry.hpp"
 
 struct Position {
     float x;

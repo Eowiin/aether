@@ -1,8 +1,8 @@
 #include <catch2/catch_test_macros.hpp>
-#include "components/position.hpp"
-#include "components/velocity.hpp"
-#include "movement_system.hpp"
-#include "registry.hpp"
+#include "game/components/position.hpp"
+#include "game/components/velocity.hpp"
+#include "game/movement_system.hpp"
+#include "ecs/registry.hpp"
 
 TEST_CASE("MovementSystem - Position + Velocity, Position seule, Velocity seule") {
     Registry registry;
