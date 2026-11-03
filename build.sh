@@ -24,5 +24,10 @@ if [[ "$(uname)" == "Darwin" ]]; then
   export CXX="${CXX:-g++-16}"
 fi
 
+echo "==> Configuration ($config) : le premier lancement télécharge raylib, EnTT et Catch2, ça peut prendre quelques minutes"
 cmake -S . -B "build/$build_dir" -G Ninja -DCMAKE_BUILD_TYPE="$config" ${extra_args[@]+"${extra_args[@]}"}
+
+echo "==> Compilation"
 cmake --build "build/$build_dir" --parallel
+
+echo "==> Build $config terminé"
