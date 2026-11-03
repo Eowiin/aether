@@ -1,9 +1,10 @@
 #ifndef COMPONENTS_VELOCITY_HPP
 #define COMPONENTS_VELOCITY_HPP
 
+#include "game/components/vec2.hpp"
+
 struct Velocity {
-    float dx;
-    float dy;
+    Vec2 value;
 };
 
 #endif

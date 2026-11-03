@@ -60,10 +60,12 @@ target_include_directories(aether_core PUBLIC
 target_compile_features(aether_core PUBLIC cxx_std_20)
 target_link_libraries(aether_core PRIVATE aether_warnings)
 
-# Code propre au jeu (systèmes, composants) : dépend du cœur de l'ECS mais
-# pas l'inverse, donc aether_core reste réutilisable dans un autre projet
+# Code propre au jeu (systèmes, composants) : dépend du cœur de l'ECS mais pas
+# de raylib, donc testable sans fenêtre. aether_core reste réutilisable ailleurs.
 add_library(aether_game STATIC
     game/src/movement_system.cpp
+    game/src/position_snapshot_system.cpp
+    game/src/teleport.cpp
 )
 target_include_directories(aether_game PUBLIC
     "${CMAKE_CURRENT_SOURCE_DIR}/game/include"
@@ -73,17 +75,17 @@ target_link_libraries(aether_game
     PRIVATE aether_warnings
 )
 
+include(FetchContent)
+
+# Affiche la progression des téléchargements (git clone) au lieu de rester
+# silencieux pendant plusieurs minutes au premier configure
+set(FETCHCONTENT_QUIET OFF)
+
 # Executable principal
 add_executable(${PROJECT_NAME}
     game/src/main.cpp
 )
 target_link_libraries(${PROJECT_NAME} PRIVATE aether_game aether_warnings)
-
-# Benchmarks : compilés dans tous les modes, mais seules les mesures en
-# Release (-O3 -DNDEBUG) sont représentatives
-if(AETHER_BUILD_BENCHMARKS OR AETHER_BUILD_TESTS)
-    include(FetchContent)
-endif()
 
 if(AETHER_BUILD_BENCHMARKS)
     add_executable(view_bench bench/view_bench.cpp)
@@ -135,6 +137,8 @@ if(AETHER_BUILD_TESTS)
 
     add_executable(game_tests
         game/tests/movement_system_tests.cpp
+        game/tests/position_snapshot_system_tests.cpp
+        game/tests/teleport_tests.cpp
     )
     target_link_libraries(game_tests PRIVATE
         aether_game
