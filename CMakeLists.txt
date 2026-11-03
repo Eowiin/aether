@@ -66,6 +66,7 @@ add_library(aether_game STATIC
     game/src/movement_system.cpp
     game/src/position_snapshot_system.cpp
     game/src/teleport.cpp
+    game/src/player_control_system.cpp
 )
 target_include_directories(aether_game PUBLIC
     "${CMAKE_CURRENT_SOURCE_DIR}/game/include"
@@ -154,6 +155,7 @@ if(AETHER_BUILD_TESTS)
         game/tests/movement_system_tests.cpp
         game/tests/position_snapshot_system_tests.cpp
         game/tests/teleport_tests.cpp
+        game/tests/player_control_system_tests.cpp
     )
     target_link_libraries(game_tests PRIVATE
         aether_game
