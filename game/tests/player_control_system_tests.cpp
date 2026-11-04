@@ -129,6 +129,93 @@ TEST_CASE("PlayerControlSystem - la vitesse suit l'angle mis à jour dans le mê
     CHECK_THAT(v.y, WithinAbs(DV * std::sin(angle), EPS));
 }
 
+TEST_CASE("PlayerControlSystem - entrée nulle : ne tourne pas, la vitesse ne fait que décroître") {
+    Registry registry;
+    // Orientée selon la vitesse (45°) : l'adhérence n'intervient pas
+    auto a = make_car(registry, PI / 4.0f, PlayerInput{0.0f, 0.0f});
+    registry.get<Velocity>(a).value = Vec2{7.0f, 7.0f};
+
+    player_control_system(registry, FIXED_DT);
+
+    CHECK(registry.get<Rotation>(a).angle == PI / 4.0f);
+    const Vec2 v = registry.get<Velocity>(a).value;
+    CHECK(v.x < 7.0f);
+    CHECK_THAT(v.x, WithinAbs(v.y, EPS));  // direction conservée
+}
+
+TEST_CASE("PlayerControlSystem - accélérateur relâché : (10, 0) ralentit") {
+    Registry registry;
+    auto a = make_car(registry, 0.0f, PlayerInput{0.0f, 0.0f});
+    registry.get<Velocity>(a).value = Vec2{10.0f, 0.0f};
+
+    player_control_system(registry, FIXED_DT);
+
+    const Vec2 v = registry.get<Velocity>(a).value;
+    CHECK_THAT(v.x, WithinAbs(10.0f - PLAYER_DECELERATION * FIXED_DT, EPS));
+    CHECK_THAT(v.y, WithinAbs(0.0f, EPS));
+}
+
+TEST_CASE("PlayerControlSystem - accélérateur relâché : (0, -10) diminue en norme, même direction") {
+    Registry registry;
+    auto a = make_car(registry, -PI / 2.0f, PlayerInput{0.0f, 0.0f});  // regarde vers le haut
+    registry.get<Velocity>(a).value = Vec2{0.0f, -10.0f};
+
+    player_control_system(registry, FIXED_DT);
+
+    const Vec2 v = registry.get<Velocity>(a).value;
+    CHECK_THAT(v.x, WithinAbs(0.0f, EPS));
+    CHECK_THAT(v.y, WithinAbs(-(10.0f - PLAYER_DECELERATION * FIXED_DT), EPS));
+}
+
+TEST_CASE("PlayerControlSystem - vitesse nulle : reste nulle") {
+    Registry registry;
+    auto a = make_car(registry, 0.0f, PlayerInput{0.0f, 0.0f});
+
+    player_control_system(registry, FIXED_DT);
+
+    CHECK(registry.get<Velocity>(a).value.x == 0.0f);
+    CHECK(registry.get<Velocity>(a).value.y == 0.0f);
+}
+
+TEST_CASE("PlayerControlSystem - vitesse très faible : s'arrête sans repartir en sens inverse") {
+    Registry registry;
+    auto a = make_car(registry, 0.0f, PlayerInput{0.0f, 0.0f});
+    registry.get<Velocity>(a).value = Vec2{0.001f, -0.002f};
+
+    // dt énorme : la décélération dépasse largement la vitesse
+    player_control_system(registry, 10.0f);
+
+    CHECK(registry.get<Velocity>(a).value.x == 0.0f);
+    CHECK(registry.get<Velocity>(a).value.y == 0.0f);
+}
+
+TEST_CASE("PlayerControlSystem - relâcher Z finit par immobiliser la voiture") {
+    Registry registry;
+    auto a = make_car(registry, 0.0f, PlayerInput{0.0f, 0.0f});
+    registry.get<Velocity>(a).value = Vec2{10.0f, 0.0f};
+
+    float previous = 10.0f;
+    for (int i = 0; i < 200; ++i) {  // 10 / 5 = 2 s = 120 ticks
+        player_control_system(registry, FIXED_DT);
+        const float x = registry.get<Velocity>(a).value.x;
+        CHECK(x >= 0.0f);
+        CHECK(x <= previous);
+        previous = x;
+    }
+    CHECK(registry.get<Velocity>(a).value.x == 0.0f);
+    CHECK(registry.get<Velocity>(a).value.y == 0.0f);
+}
+
+TEST_CASE("PlayerControlSystem - la décélération ne s'applique pas quand Z est maintenu") {
+    Registry registry;
+    auto a = make_car(registry, 0.0f, PlayerInput{1.0f, 0.0f});
+    registry.get<Velocity>(a).value = Vec2{10.0f, 0.0f};
+
+    player_control_system(registry, FIXED_DT);
+
+    CHECK_THAT(registry.get<Velocity>(a).value.x, WithinAbs(10.0f + DV, EPS));
+}
+
 TEST_CASE("PlayerControlSystem - chaque entité suit sa propre commande") {
     Registry registry;
     auto a = make_car(registry, 0.0f, PlayerInput{1.0f, 0.0f});
@@ -169,4 +256,26 @@ TEST_CASE("PlayerControlSystem - il faut PlayerInput, Rotation et Velocity") {
     CHECK(registry.get<Velocity>(no_rotation).value.y == -4.0f);
     CHECK(registry.get<Rotation>(no_velocity).angle == 0.0f);
     CHECK_FALSE(registry.has<Velocity>(no_velocity));
+}
+
+TEST_CASE("PlayerControlSystem - décélération passive : drop = 2 (dt = 0,4)") {
+    constexpr float dt = 0.4f;  // PLAYER_DECELERATION * dt = 2
+    static_assert(PLAYER_DECELERATION == 5.0f);
+
+    Registry registry;
+    auto a = make_car(registry, std::atan2(4.0f, 3.0f), PlayerInput{0.0f, 0.0f});  // alignée sur la vitesse
+    auto b = make_car(registry, 0.0f, PlayerInput{0.0f, 0.0f});
+    auto c = make_car(registry, 0.0f, PlayerInput{0.0f, 0.0f});
+    registry.get<Velocity>(a).value = Vec2{3.0f, 4.0f};  // norme 5 -> 3, même direction
+    registry.get<Velocity>(b).value = Vec2{1.0f, 0.0f};  // norme 1 < drop -> arrêt
+    registry.get<Velocity>(c).value = Vec2{0.0f, 0.0f};
+
+    player_control_system(registry, dt);
+
+    CHECK_THAT(registry.get<Velocity>(a).value.x, WithinAbs(1.8f, EPS));
+    CHECK_THAT(registry.get<Velocity>(a).value.y, WithinAbs(2.4f, EPS));
+    CHECK_THAT(registry.get<Velocity>(b).value.x, WithinAbs(0.0f, EPS));
+    CHECK_THAT(registry.get<Velocity>(b).value.y, WithinAbs(0.0f, EPS));
+    CHECK_THAT(registry.get<Velocity>(c).value.x, WithinAbs(0.0f, EPS));
+    CHECK_THAT(registry.get<Velocity>(c).value.y, WithinAbs(0.0f, EPS));
 }

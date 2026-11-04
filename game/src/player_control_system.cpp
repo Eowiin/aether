@@ -16,5 +16,19 @@ void player_control_system(Registry& registry, float dt) {
             const float delta_speed = input.throttle * PLAYER_ACCELERATION * dt;
             velocity.value.x += delta_speed * forward.x;
             velocity.value.y += delta_speed * forward.y;
+
+            // Décélération passive : opposée à la vitesse, bornée pour ne jamais l'inverser
+            if (input.throttle == 0.0f) {
+                const float speed = std::sqrt(velocity.value.x * velocity.value.x +
+                                              velocity.value.y * velocity.value.y);
+                const float drop = PLAYER_DECELERATION * dt;
+                if (speed <= drop) {
+                    velocity.value = Vec2{0.0f, 0.0f};
+                } else {
+                    const float scale = (speed - drop) / speed;
+                    velocity.value.x *= scale;
+                    velocity.value.y *= scale;
+                }
+            }
         });
 }
