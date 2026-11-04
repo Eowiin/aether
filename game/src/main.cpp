@@ -9,6 +9,7 @@
 #include "game/components/velocity.hpp"
 #include "game/components/previous_position.hpp"
 #include "game/components/player_input.hpp"
+#include "game/components/rotation.hpp"
 #include "game/macros.hpp"
 
 int main() {
@@ -20,19 +21,19 @@ int main() {
     registry.emplace<PreviousPosition>(entity, Vec2{50.0, 50.0});
     registry.emplace<Velocity>(entity, Vec2{0.0, 0.0});
     registry.emplace<PlayerInput>(entity, PlayerInput{0.0f, 0.0f});
-
+    registry.emplace<Rotation>(entity, 0.0f);
 
     InitWindow(800, 450, "aether");
     while (!WindowShouldClose()) {
         // Touches opposées : leurs contributions se compensent (Z+S → 0, Q+D → 0)
         PlayerInput& input = registry.get<PlayerInput>(entity);
-        input.vertical = (IsKeyDown(KEY_S) ? 1.0f : 0.0f) - (IsKeyDown(KEY_Z) ? 1.0f : 0.0f);
-        input.horizontal = (IsKeyDown(KEY_D) ? 1.0f : 0.0f) - (IsKeyDown(KEY_Q) ? 1.0f : 0.0f);
+        input.throttle = (IsKeyDown(KEY_Z) ? 1.0f : 0.0f) - (IsKeyDown(KEY_S) ? 1.0f : 0.0f);
+        input.steering = (IsKeyDown(KEY_D) ? 1.0f : 0.0f) - (IsKeyDown(KEY_Q) ? 1.0f : 0.0f);
         accumulator += std::min(GetFrameTime(), 0.25f);  // cap anti « spirale de la mort »
         int ticks = 0;
         while (accumulator >= FIXED_DT && ticks < MAX_TICKS_PER_FRAME) {
             position_snapshot_system(registry);
-            player_control_system(registry);
+            player_control_system(registry, FIXED_DT);
             movement_system(registry, FIXED_DT);
             accumulator -= FIXED_DT;
             ++ticks;

@@ -3,7 +3,10 @@
 
 #include "ecs/registry.hpp"
 
-// Traduit PlayerInput en Velocity pour les entités qui possèdent les deux
-void player_control_system(Registry& registry);
+// Fait tourner Rotation selon steering, puis ajoute à Velocity une variation
+// throttle * PLAYER_ACCELERATION * dt dans la nouvelle direction du véhicule
+// (cos θ, sin θ). La vitesse existante est conservée (inertie).
+// Seules les entités qui possèdent PlayerInput, Rotation et Velocity sont pilotées.
+void player_control_system(Registry& registry, float dt);
 
 #endif

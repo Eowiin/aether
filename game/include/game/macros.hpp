@@ -1,8 +1,11 @@
 #ifndef MACROS_HPP
 #define MACROS_HPP
 
+#include <numbers>
+
 constexpr float FIXED_DT = 1.0f / 60.0f;
-constexpr float PLAYER_SPEED = 10.0f;
+constexpr float PLAYER_ACCELERATION = 10.0f;
+constexpr float PLAYER_ANGULAR_SPEED = std::numbers::pi_v<float>;  // rad/s, un demi-tour par seconde
 constexpr int MAX_TICKS_PER_FRAME = 5;
 
 #endif
