@@ -1,5 +1,6 @@
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/matchers/catch_matchers_floating_point.hpp>
+#include <catch2/generators/catch_generators.hpp>
 #include <cmath>
 #include <numbers>
 #include "game/components/player_input.hpp"
@@ -8,6 +9,7 @@
 #include "game/components/velocity.hpp"
 #include "game/macros.hpp"
 #include "game/player_control_system.hpp"
+#include "game/velocity_decomposition.hpp"
 #include "ecs/registry.hpp"
 
 using Catch::Matchers::WithinAbs;
@@ -68,7 +70,7 @@ TEST_CASE("PlayerControlSystem - l'accélération s'ajoute à la vitesse existan
     // La vitesse (100, 0) est purement latérale pour une voiture à 90° : seule
     // l'adhérence la réduit (de PLAYER_GRIP * dt), l'accélération s'y ajoute en y.
     const Vec2 v = registry.get<Velocity>(a).value;
-    CHECK_THAT(v.x, WithinAbs(100.0f, 1e-3));
+    CHECK_THAT(v.x, WithinAbs(100.0f - PLAYER_GRIP * dt, 1e-3));
     CHECK_THAT(v.y, WithinAbs(5.0f, 1e-3));
 }
 
@@ -278,4 +280,132 @@ TEST_CASE("PlayerControlSystem - décélération passive : drop = 2 (dt = 0,4)")
     CHECK_THAT(registry.get<Velocity>(b).value.y, WithinAbs(0.0f, EPS));
     CHECK_THAT(registry.get<Velocity>(c).value.x, WithinAbs(0.0f, EPS));
     CHECK_THAT(registry.get<Velocity>(c).value.y, WithinAbs(0.0f, EPS));
+}
+
+TEST_CASE("decompose_velocity - vitesse (10, 5) selon l'orientation") {
+    const Vec2 v{10.0f, 5.0f};
+    const float s2 = std::sqrt(2.0f) / 2.0f;
+
+    SECTION("0° : avant = +x, côté = +y") {
+        const auto d = decompose_velocity(v, 0.0f);
+        CHECK_THAT(d.longitudinal, WithinAbs(10.0f, EPS));
+        CHECK_THAT(d.lateral, WithinAbs(5.0f, EPS));
+    }
+    SECTION("90° : avant = +y, côté = -x") {
+        const auto d = decompose_velocity(v, PI / 2.0f);
+        CHECK_THAT(d.longitudinal, WithinAbs(5.0f, EPS));
+        CHECK_THAT(d.lateral, WithinAbs(-10.0f, EPS));
+    }
+    SECTION("45°") {
+        const auto d = decompose_velocity(v, PI / 4.0f);
+        CHECK_THAT(d.longitudinal, WithinAbs(15.0f * s2, EPS));   // ≈ 10,607
+        CHECK_THAT(d.lateral, WithinAbs(-5.0f * s2, EPS));        // ≈ -3,536
+    }
+    SECTION("la norme est conservée : long² + lat² = |v|²") {
+        const auto d = decompose_velocity(v, 0.7f);
+        CHECK_THAT(d.longitudinal * d.longitudinal + d.lateral * d.lateral, WithinAbs(125.0f, 1e-3));
+    }
+}
+
+TEST_CASE("recompose_velocity - inverse de decompose_velocity pour (10, 5)") {
+    const Vec2 v{10.0f, 5.0f};
+    const float angle = GENERATE(0.0f, PI / 4.0f, PI / 2.0f);
+    CAPTURE(angle);
+
+    const Vec2 back = recompose_velocity(decompose_velocity(v, angle), angle);
+
+    CHECK_THAT(back.x, WithinAbs(v.x, EPS));
+    CHECK_THAT(back.y, WithinAbs(v.y, EPS));
+}
+
+TEST_CASE("PlayerControlSystem - adhérence puis décélération, accélérateur relâché") {
+    static_assert(PLAYER_GRIP == 20.0f && PLAYER_DECELERATION == 5.0f);
+    constexpr float dt = 0.1f;  // PLAYER_GRIP * dt = 2
+
+    Registry registry;
+    auto a = make_car(registry, 0.0f, PlayerInput{0.0f, 0.0f});
+    registry.get<Velocity>(a).value = Vec2{0.0f, 5.0f};  // purement latérale
+
+    player_control_system(registry, dt);
+
+    // Adhérence : (0, 5) -> (0, 3). Puis throttle == 0 : la norme perd
+    // PLAYER_DECELERATION * dt = 0,5, direction conservée -> (0, 2,5).
+    const float after_grip = 5.0f - PLAYER_GRIP * dt;
+    const float expected = after_grip - PLAYER_DECELERATION * dt;
+    REQUIRE_THAT(after_grip, WithinAbs(3.0f, EPS));
+    const Vec2 v = registry.get<Velocity>(a).value;
+    CHECK_THAT(v.x, WithinAbs(0.0f, EPS));
+    CHECK_THAT(v.y, WithinAbs(expected, EPS));
+}
+
+TEST_CASE("PlayerControlSystem - adhérence forte, accélérateur relâché : pas d'inversion latérale") {
+    Registry registry;
+    auto pos = make_car(registry, 0.0f, PlayerInput{0.0f, 0.0f});
+    auto neg = make_car(registry, 0.0f, PlayerInput{0.0f, 0.0f});
+    // Composante longitudinale pour que la décélération ne remette pas tout à zéro
+    registry.get<Velocity>(pos).value = Vec2{10.0f, 0.5f};
+    registry.get<Velocity>(neg).value = Vec2{10.0f, -0.5f};
+
+    player_control_system(registry, 1.0f);  // PLAYER_GRIP * dt = 20 >> 0,5
+
+    // Latérale annulée (pas -19,5 / +19,5), puis norme 10 -> 5 le long de l'axe avant
+    for (auto e : {pos, neg}) {
+        const Vec2 v = registry.get<Velocity>(e).value;
+        CHECK(v.y == 0.0f);
+        CHECK_THAT(v.x, WithinAbs(10.0f - PLAYER_DECELERATION, EPS));
+    }
+}
+
+TEST_CASE("PlayerControlSystem - adhérence : la latérale décroît vers 0 sans jamais changer de signe") {
+    Registry registry;
+    auto a = make_car(registry, PI / 4.0f, PlayerInput{0.0f, 0.0f});
+    registry.get<Velocity>(a).value = recompose_velocity({8.0f, 3.0f}, PI / 4.0f);
+
+    float previous = 3.0f;
+    for (int i = 0; i < 30; ++i) {
+        player_control_system(registry, FIXED_DT);
+        const float lateral = decompose_velocity(registry.get<Velocity>(a).value, PI / 4.0f).lateral;
+        CHECK(lateral >= -EPS);
+        CHECK(lateral <= previous + EPS);
+        previous = lateral;
+    }
+    CHECK_THAT(previous, WithinAbs(0.0f, EPS));  // 3 / (20 / 60) = 9 ticks suffisent
+}
+
+TEST_CASE("PlayerControlSystem - adhérence : atténue la vitesse latérale, garde la longitudinale") {
+    Registry registry;
+    // Voiture à 0° (avant = +x, côté = +y), throttle à 1 pour éviter la décélération passive
+    auto a = make_car(registry, 0.0f, PlayerInput{1.0f, 0.0f});
+    registry.get<Velocity>(a).value = Vec2{10.0f, 5.0f};
+    const float dt = 0.1f;  // PLAYER_GRIP * dt = 2
+
+    player_control_system(registry, dt);
+
+    const Vec2 v = registry.get<Velocity>(a).value;
+    CHECK_THAT(v.x, WithinAbs(10.0f + PLAYER_ACCELERATION * dt, EPS));  // longitudinale : seule l'accélération
+    CHECK_THAT(v.y, WithinAbs(5.0f - PLAYER_GRIP * dt, EPS));           // latérale : 5 -> 3
+}
+
+TEST_CASE("PlayerControlSystem - adhérence : le signe de la vitesse latérale ne s'inverse jamais") {
+    Registry registry;
+    auto a = make_car(registry, 0.0f, PlayerInput{1.0f, 0.0f});
+    auto b = make_car(registry, 0.0f, PlayerInput{1.0f, 0.0f});
+    registry.get<Velocity>(a).value = Vec2{0.0f, 0.5f};
+    registry.get<Velocity>(b).value = Vec2{0.0f, -0.5f};
+
+    player_control_system(registry, 1.0f);  // PLAYER_GRIP * dt >> 0,5
+
+    CHECK_THAT(registry.get<Velocity>(a).value.y, WithinAbs(0.0f, EPS));
+    CHECK_THAT(registry.get<Velocity>(b).value.y, WithinAbs(0.0f, EPS));
+}
+
+TEST_CASE("PlayerControlSystem - adhérence : une vitesse purement longitudinale est inchangée") {
+    Registry registry;
+    auto a = make_car(registry, PI / 2.0f, PlayerInput{1.0f, 0.0f});
+    registry.get<Velocity>(a).value = Vec2{0.0f, 10.0f};
+
+    player_control_system(registry, FIXED_DT);
+
+    CHECK_THAT(registry.get<Velocity>(a).value.x, WithinAbs(0.0f, EPS));
+    CHECK_THAT(registry.get<Velocity>(a).value.y, WithinAbs(10.0f + DV, EPS));
 }
